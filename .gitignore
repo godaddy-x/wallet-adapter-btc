@@ -1,0 +1,6 @@
+/data/
+/output/
+*.exe
+*.test
+.idea/
+tools/
