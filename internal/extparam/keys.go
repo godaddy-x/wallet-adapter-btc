@@ -10,6 +10,7 @@ const (
 	KeyBTCPrevOuts        = "btcPrevOuts"
 	KeyOriginPrevOuts     = "originBtcPrevOuts"
 	KeyExcludeOutpoints   = "btcExcludeOutpoints" // server-side: locked outpoints to skip during listunspent select
+	KeyDustDonatedSats    = "dust_donated_sats"   // sats merged from sub-dust change into miner fee
 )
 
 // OriginPrevOutsMap copies cached origin prevouts into a new ExtParam map for RBF rebuild.

@@ -57,6 +57,10 @@ type WalletConfig struct {
 	MinFeeRate        decimal.Decimal // BTC/KB floor; regtest fallback when node has no fee history
 	FeeBumpMultiplier decimal.Decimal // default bump for RBF/CPFP (1.0 = none)
 	EnableRBF         bool            // BIP125 nSequence=0xfffffffd on built txs
+
+	// Dust change policy (see docs/BTC_DUST_CHANGE_TO_FEE.md).
+	DustLimitSats         int64 // 0 = DefaultDustLimitSats (546); max MaxDustLimitSats
+	OmitChangeBelowDust   bool  // merge sub-dust change into miner fee
 }
 
 // NewConfig creates default config for the given symbol.
@@ -81,6 +85,7 @@ func NewConfig(symbol string) *WalletConfig {
 		MinFeeRate:        decimal.RequireFromString("0.00001"),
 		FeeBumpMultiplier: decimal.NewFromInt(1),
 		EnableRBF:         true,
+		OmitChangeBelowDust: true,
 	}
 }
 
@@ -179,6 +184,16 @@ func BuildConfigFromConfiger(c adapterconfig.Configer, symbol string) *WalletCon
 		}
 	}
 	cfg.EnableRBF = parseBool(c.String("enableRBF"), true)
+	cfg.OmitChangeBelowDust = parseBool(c.String("omitChangeBelowDust"), true)
+	if n, err := c.Int64("dustLimitSats"); err == nil && n > 0 {
+		cfg.DustLimitSats = n
+	}
+	if v := strings.TrimSpace(c.String("dustLimit")); v != "" {
+		if d, err := decimal.NewFromString(v); err == nil && d.GreaterThan(decimal.Zero) {
+			cfg.DustLimitSats = d.Shift(cfg.Decimals).IntPart()
+		}
+	}
+	cfg.ValidateDustConfig()
 	return cfg
 }
 

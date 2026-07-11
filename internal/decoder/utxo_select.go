@@ -129,3 +129,15 @@ func countSpendableUTXOs(unspents []*models.Unspent) int {
 	}
 	return n
 }
+
+func sumUTXOAmounts(usedUTXO []*models.Unspent) (decimal.Decimal, error) {
+	total := decimal.Zero
+	for _, u := range usedUTXO {
+		ua, err := parseUTXOAmount(u)
+		if err != nil {
+			return decimal.Zero, err
+		}
+		total = total.Add(ua)
+	}
+	return total, nil
+}

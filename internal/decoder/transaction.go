@@ -208,8 +208,31 @@ func (d *BtcTransactionDecoder) createBTCTransfer(wrapper wallet.WalletDAI, rawT
 		return types.Errorf(types.ErrInsufficientBalanceOfAccount, "%s", err.Error())
 	}
 
+	inputTotal, err := sumUTXOAmounts(sel.UsedUTXO)
+	if err != nil {
+		return types.Errorf(types.ErrCreateRawTransactionFailed, "%s", err.Error())
+	}
+	policy, err := applyChangePolicy(ChangePolicyParams{
+		InputTotal:          inputTotal,
+		TotalSend:           totalSend,
+		Fees:                sel.Fees,
+		FeeRate:             sel.FeeRate,
+		NumInputs:           int64(len(sel.UsedUTXO)),
+		OutputSlots:         len(destinations) + 1,
+		Estimate:            d.Wm.EstimateFee,
+		DustLimit:           d.Wm.Config.DustLimitBTC(),
+		OmitChangeBelowDust: d.Wm.Config.OmitChangeBelowDust,
+		Decimals:            d.Wm.Decimal(),
+		IsCancel:            false,
+		ChangeAddr:          sel.ChangeAddr,
+	})
+	if err != nil {
+		return types.Errorf(types.ErrInsufficientBalanceOfAccount, "%s", err.Error())
+	}
+
 	rawTx.FeeRate = util.Decimal(sel.FeeRate, d.Wm.Decimal())
-	rawTx.Fees = util.Decimal(sel.Fees, d.Wm.Decimal())
+	rawTx.Fees = util.Decimal(policy.Fees, d.Wm.Decimal())
+	writeDustDonatedExtParam(rawTx, policy.DustDonatedSats)
 
 	outputAddrs := make(map[string]decimal.Decimal)
 	for to, amount := range rawTx.To {
@@ -219,8 +242,8 @@ func (d *BtcTransactionDecoder) createBTCTransfer(wrapper wallet.WalletDAI, rawT
 		}
 		outputAddrs = appendOutput(outputAddrs, to, decamount)
 	}
-	if sel.ChangeAmount.GreaterThan(decimal.Zero) {
-		outputAddrs = appendOutput(outputAddrs, sel.ChangeAddr, sel.ChangeAmount)
+	if policy.ChangeAmount.GreaterThan(decimal.Zero) {
+		outputAddrs = appendOutput(outputAddrs, policy.ChangeAddr, policy.ChangeAmount)
 	}
 	return d.buildRawTransaction(wrapper, rawTx, sel.UsedUTXO, outputAddrs)
 }

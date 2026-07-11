@@ -7,11 +7,12 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.1.3
 	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/godaddy-x/wallet-adapter v1.0.7
+	github.com/godaddy-x/wallet-adapter v1.0.8
 	github.com/imroc/req v0.3.2
 	github.com/mailru/easyjson v0.9.1
 	github.com/shopspring/decimal v1.4.0
 	github.com/tidwall/gjson v1.18.0
+	go.mongodb.org/mongo-driver v1.17.3
 )
 
 require (
@@ -28,12 +29,9 @@ require (
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
-	go.mongodb.org/mongo-driver v1.17.3 // indirect
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 )
 
 replace github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.1
-
-//replace github.com/godaddy-x/wallet-adapter => ../wallet-adapter

@@ -302,12 +302,28 @@ func (d *BtcTransactionDecoder) createRBFTransfer(wrapper wallet.WalletDAI, rawT
 			return err
 		}
 		fees = d.enforceRBFMinimumFee(origin, int64(len(usedUTXO)), 1, fees)
-		changeAmount := inputTotal.Sub(fees)
-		if changeAmount.LessThanOrEqual(decimal.Zero) {
+		policy, err := applyChangePolicy(ChangePolicyParams{
+			InputTotal:          inputTotal,
+			TotalSend:           decimal.Zero,
+			Fees:                fees,
+			FeeRate:             feeRate,
+			NumInputs:           int64(len(usedUTXO)),
+			OutputSlots:         1,
+			Estimate:            d.Wm.EstimateFee,
+			DustLimit:           d.Wm.Config.DustLimitBTC(),
+			OmitChangeBelowDust: d.Wm.Config.OmitChangeBelowDust,
+			Decimals:            d.Wm.Decimal(),
+			IsCancel:            true,
+			ChangeAddr:          changeAddr,
+		})
+		if err != nil {
+			return types.Errorf(types.ErrInsufficientBalanceOfAccount, "%s", err.Error())
+		}
+		if !policy.ChangeAmount.GreaterThan(decimal.Zero) {
 			return types.Errorf(types.ErrInsufficientBalanceOfAccount, "inputs cannot cover cancel fee")
 		}
-		outputAddrs[changeAddr] = changeAmount
-		rawTx.Fees = util.Decimal(fees, d.Wm.Decimal())
+		outputAddrs[changeAddr] = policy.ChangeAmount
+		rawTx.Fees = util.Decimal(policy.Fees, d.Wm.Decimal())
 	} else {
 		totalSend := decimal.Zero
 		for addr, amount := range rawTx.To {
@@ -321,31 +337,50 @@ func (d *BtcTransactionDecoder) createRBFTransfer(wrapper wallet.WalletDAI, rawT
 			totalSend = totalSend.Add(decamount)
 			outputAddrs = appendOutput(outputAddrs, addr, decamount)
 		}
+		changeAddr, err := resolveRBFChangeAddress(rawTx, usedUTXO)
+		if err != nil {
+			return types.Errorf(types.ErrCreateRawTransactionFailed, "%v", err)
+		}
 		outputCount := int64(len(outputAddrs))
-		fees, err := d.Wm.EstimateFee(int64(len(usedUTXO)), outputCount+1, feeRate)
+		outputSlots := int(outputCount + 1)
+		fees, err := d.Wm.EstimateFee(int64(len(usedUTXO)), int64(outputSlots), feeRate)
 		if err != nil {
 			return err
 		}
-		fees = d.enforceRBFMinimumFee(origin, int64(len(usedUTXO)), outputCount+1, fees)
-		changeAmount := inputTotal.Sub(totalSend).Sub(fees)
-		if changeAmount.LessThan(decimal.Zero) {
+		fees = d.enforceRBFMinimumFee(origin, int64(len(usedUTXO)), int64(outputSlots), fees)
+		if inputTotal.Sub(totalSend).Sub(fees).LessThan(decimal.Zero) {
+			outputSlots = int(outputCount)
 			fees, err = d.Wm.EstimateFee(int64(len(usedUTXO)), outputCount, feeRate)
 			if err != nil {
 				return err
 			}
 			fees = d.enforceRBFMinimumFee(origin, int64(len(usedUTXO)), outputCount, fees)
-			changeAmount = inputTotal.Sub(totalSend).Sub(fees)
-			if changeAmount.LessThan(decimal.Zero) {
+			if inputTotal.Sub(totalSend).Sub(fees).LessThan(decimal.Zero) {
 				return types.Errorf(types.ErrInsufficientBalanceOfAccount, "origin inputs cannot cover send + bumped fee")
 			}
-		} else if changeAmount.GreaterThan(decimal.Zero) {
-			changeAddr, err := resolveRBFChangeAddress(rawTx, usedUTXO)
-			if err != nil {
-				return types.Errorf(types.ErrCreateRawTransactionFailed, "%v", err)
-			}
-			outputAddrs = appendOutput(outputAddrs, changeAddr, changeAmount)
 		}
-		rawTx.Fees = util.Decimal(fees, d.Wm.Decimal())
+		policy, err := applyChangePolicy(ChangePolicyParams{
+			InputTotal:          inputTotal,
+			TotalSend:           totalSend,
+			Fees:                fees,
+			FeeRate:             feeRate,
+			NumInputs:           int64(len(usedUTXO)),
+			OutputSlots:         outputSlots,
+			Estimate:            d.Wm.EstimateFee,
+			DustLimit:           d.Wm.Config.DustLimitBTC(),
+			OmitChangeBelowDust: d.Wm.Config.OmitChangeBelowDust,
+			Decimals:            d.Wm.Decimal(),
+			IsCancel:            false,
+			ChangeAddr:          changeAddr,
+		})
+		if err != nil {
+			return types.Errorf(types.ErrInsufficientBalanceOfAccount, "%s", err.Error())
+		}
+		if policy.ChangeAmount.GreaterThan(decimal.Zero) {
+			outputAddrs = appendOutput(outputAddrs, policy.ChangeAddr, policy.ChangeAmount)
+		}
+		rawTx.Fees = util.Decimal(policy.Fees, d.Wm.Decimal())
+		writeDustDonatedExtParam(rawTx, policy.DustDonatedSats)
 	}
 
 	return d.buildRawTransaction(wrapper, rawTx, usedUTXO, outputAddrs)
