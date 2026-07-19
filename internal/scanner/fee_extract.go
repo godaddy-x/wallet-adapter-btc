@@ -405,13 +405,13 @@ func findAnyOutboundExtractItem(items []*types.ExtractDataItem) (int, string, bo
 	return 0, "", false
 }
 
-// buildMultiPayerBusinessLegs resolves per-payer netOut using chain vin/self-change and business sendOut.
+// buildMultiPayerBusinessLegs resolves per-payer netOut from chain vin/self-change.
+// sendOut comes from the trade order; fee_i = netOut_i − sendOut_i is applied by the caller.
 func buildMultiPayerBusinessLegs(
 	trx *models.Transaction,
 	items []*types.ExtractDataItem,
 	snap *types.TradeOrderOutboundSnapshot,
 	decimals int32,
-	chainFeeSats int64,
 	sendOutByPayer map[string]int64,
 ) ([]btcPayerLeg, bool) {
 	if trx == nil || snap == nil || len(snap.Legs) == 0 {
@@ -437,12 +437,6 @@ func buildMultiPayerBusinessLegs(
 		}
 	}
 	extractByPayer := indexExtractLegsByPayer(items, decimals)
-	feeOnlyCount := 0
-	for _, sendOutSats := range sendOutByPayer {
-		if sendOutSats == 0 {
-			feeOnlyCount++
-		}
-	}
 	out := make([]btcPayerLeg, 0, len(snap.Legs))
 	for _, bl := range snap.Legs {
 		payer := normalizeScanAddress(bl.PayerAddress)
@@ -462,20 +456,10 @@ func buildMultiPayerBusinessLegs(
 			itemIdx = el.itemIndex
 			sourceKey = el.sourceKey
 		}
+		// netOut = grossOut = vin − change; fee = netOut − sendOut (sendOut from trade order).
 		g := grossOut[payer]
-		var netOutSats int64
-		switch {
-		case sendOutSats == 0:
-			// fee-only payer: exactly one such payer on the tx → netOut = chainFee
-			if feeOnlyCount != 1 || chainFeeSats <= 0 {
-				return nil, false
-			}
-			netOutSats = chainFeeSats
-		default:
-			if sendOutSats > g {
-				return nil, false
-			}
-			netOutSats = g
+		if sendOutSats > g {
+			return nil, false
 		}
 		out = append(out, btcPayerLeg{
 			itemIndex:  itemIdx,
@@ -483,7 +467,7 @@ func buildMultiPayerBusinessLegs(
 			payerAddr:  payer,
 			vinSats:    vinSats,
 			voutSats:   voutSats,
-			netOutSats: netOutSats,
+			netOutSats: g,
 		})
 	}
 	if len(out) != len(snap.Legs) {
@@ -545,7 +529,7 @@ func tryBusinessPayerLegAccounting(trx *models.Transaction, items []*types.Extra
 	legs := extractLegs
 	if multiPayerBusiness {
 		var ok bool
-		legs, ok = buildMultiPayerBusinessLegs(trx, items, snap, decimals, chainFeeSats, sendOutByPayer)
+		legs, ok = buildMultiPayerBusinessLegs(trx, items, snap, decimals, sendOutByPayer)
 		if !ok {
 			return nil, false
 		}
