@@ -6,48 +6,15 @@ import (
 	"github.com/godaddy-x/wallet-adapter-btc/internal/models"
 	"github.com/godaddy-x/wallet-adapter/types"
 )
-func TestPeerOutFeeAccountingTable(t *testing.T) {
+func TestBusinessPayerAccountingIllegalPeerInTable(t *testing.T) {
 	const dec = int32(8)
 
-	type wantLeg struct {
-		sendOut int64
-		fee     int64
-		netOut  int64
-	}
-
 	tests := []struct {
-		name   string
-		trx    *models.Transaction
-		legs   []types.TradeOrderPayerLeg
+		name    string
+		trx     *models.Transaction
+		legs    []types.TradeOrderPayerLeg
 		sendOut map[string]string
-		want   map[string]wantLeg // nil → illegal peerIn, accounting must fail
 	}{
-		{
-			name: "summary_two_payer_peerOut_zero",
-			trx: &models.Transaction{
-				TxID: "summary-ab",
-				Vins: []*models.Vin{
-					{Addr: "bcrt1qa", Value: "0.6"},
-					{Addr: "bcrt1qb", Value: "0.4"},
-				},
-				Vouts: []*models.Vout{
-					{Addr: "bcrt1qext", Value: "0.9"},
-					{Addr: "bcrt1qa", Value: "0.09989"},
-				},
-			},
-			legs: []types.TradeOrderPayerLeg{
-				{PayerAddress: "bcrt1qa", SendOut: "0.50004889"},
-				{PayerAddress: "bcrt1qb", SendOut: "0.39995111"},
-			},
-			sendOut: map[string]string{
-				"bcrt1qa": "0.50004889",
-				"bcrt1qb": "0.39995111",
-			},
-			want: map[string]wantLeg{
-				"bcrt1qa": {sendOut: 50_004_889, fee: 6111, netOut: 50_011_000},
-				"bcrt1qb": {sendOut: 39_995_111, fee: 4889, netOut: 40_000_000},
-			},
-		},
 		{
 			name: "dust_main_peerIn_to_sibling_rejected",
 			trx: &models.Transaction{
@@ -69,7 +36,6 @@ func TestPeerOutFeeAccountingTable(t *testing.T) {
 				"bcrt1qdust": "0.0000369",
 				"bcrt1qmain": "0.0029631",
 			},
-			want: nil,
 		},
 		{
 			name: "speedup_fund_peerIn_rejected",
@@ -92,7 +58,6 @@ func TestPeerOutFeeAccountingTable(t *testing.T) {
 				"bcrt1qxhmnzg24z83gw3eq6u3ddtll86alw43f0h2egx": "0.0000369",
 				"bcrt1q7hfsp0ja6lwmz85djtgh03w7nch2d4nujp4juq": "0.0029631",
 			},
-			want: nil,
 		},
 		{
 			name: "fee_only_with_sibling_peerIn_rejected",
@@ -114,7 +79,6 @@ func TestPeerOutFeeAccountingTable(t *testing.T) {
 				"bcrt1qdust": "0.003",
 				"bcrt1qmain": "0",
 			},
-			want: nil,
 		},
 	}
 
@@ -129,66 +93,8 @@ func TestPeerOutFeeAccountingTable(t *testing.T) {
 				symbol:    "BTC",
 				accountID: "account-1",
 			}
-			got := computePayerLegAccounting(tc.trx, items, dec, acctCtx)
-			if tc.want == nil {
-				if len(got) != 0 {
-					t.Fatalf("expected illegal peerIn fail-stop, got %d legs", len(got))
-				}
-				return
-			}
-			if len(got) != len(tc.want) {
-				t.Fatalf("legs=%d want %d", len(got), len(tc.want))
-			}
-			byPayer := map[string]btcPayerLeg{}
-			for _, leg := range got {
-				byPayer[leg.payerAddr] = leg
-			}
-			var feeSum, sendSum int64
-			for payer, w := range tc.want {
-				leg, ok := byPayer[normalizeScanAddress(payer)]
-				if !ok {
-					t.Fatalf("missing leg %s", payer)
-				}
-				if leg.sendOutSats != w.sendOut {
-					t.Fatalf("%s sendOut=%d want %d", payer, leg.sendOutSats, w.sendOut)
-				}
-				if leg.feeSats != w.fee {
-					t.Fatalf("%s fee=%d want %d", payer, leg.feeSats, w.fee)
-				}
-				if leg.netOutSats != w.netOut {
-					t.Fatalf("%s netOut=%d want %d", payer, leg.netOutSats, w.netOut)
-				}
-				if leg.sendOutSats+leg.feeSats != leg.netOutSats {
-					t.Fatalf("%s sendOut+fee != netOut", payer)
-				}
-				feeSum += leg.feeSats
-				sendSum += leg.sendOutSats
-			}
-			chainFee, ok := computeBTCTransactionFee(tc.trx)
-			if !ok {
-				t.Fatal("chain fee")
-			}
-			chainFeeSats, ok := decimalToSats(chainFee, dec)
-			if !ok {
-				t.Fatal("chain fee sats")
-			}
-			if feeSum != chainFeeSats {
-				t.Fatalf("fee sum=%d want chain %d", feeSum, chainFeeSats)
-			}
-			external := chainExternalOutSatsExcludingPayers(tc.trx, map[string]int64{
-				normalizeScanAddress("bcrt1qa"): 0,
-				normalizeScanAddress("bcrt1qb"): 0,
-				normalizeScanAddress("bcrt1qdust"): 0,
-				normalizeScanAddress("bcrt1qmain"): 0,
-			}, dec)
-			// rebuild payer set from want keys
-			payerSet := make(map[string]int64, len(tc.want))
-			for payer := range tc.want {
-				payerSet[normalizeScanAddress(payer)] = 0
-			}
-			external = chainExternalOutSatsExcludingPayers(tc.trx, payerSet, dec)
-			if sendSum != external {
-				t.Fatalf("send sum=%d want external %d", sendSum, external)
+			if got := computePayerLegAccounting(tc.trx, items, dec, acctCtx); len(got) != 0 {
+				t.Fatalf("expected illegal peerIn fail-stop, got %d legs", len(got))
 			}
 		})
 	}

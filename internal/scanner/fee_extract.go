@@ -127,11 +127,6 @@ func amountStringToSats(amount string, decimals int32) (int64, bool) {
 	return decimalToSats(d, decimals)
 }
 
-func amountStringMatchesSats(amount string, sats int64, decimals int32) bool {
-	got, ok := amountStringToSats(amount, decimals)
-	return ok && got == sats
-}
-
 func resolveFeeAccountingAccountID(items []*types.ExtractDataItem) string {
 	for _, item := range items {
 		if item == nil || strings.TrimSpace(item.SourceKey) == "" {
@@ -164,31 +159,6 @@ func decimalToSats(d decimal.Decimal, decimals int32) (int64, bool) {
 // satsToAmount formats whole satoshis back to a BTC decimal string (max 8 dp, no rounding).
 func satsToAmount(sats int64, decimals int32) string {
 	return decimal.New(sats, 0).Shift(-decimals).String()
-}
-
-func sumTransactionVoutSats(trx *models.Transaction, decimals int32) (int64, bool) {
-	if trx == nil {
-		return 0, false
-	}
-	sum := int64(0)
-	for _, out := range trx.Vouts {
-		if out.Type == "OP_RETURN" {
-			continue
-		}
-		if !validExtractAmount(out.Value) {
-			continue
-		}
-		amount, err := decimal.NewFromString(out.Value)
-		if err != nil {
-			continue
-		}
-		sats, ok := decimalToSats(amount, decimals)
-		if !ok {
-			return 0, false
-		}
-		sum += sats
-	}
-	return sum, true
 }
 
 func chainVinSatsByPayer(trx *models.Transaction, payers map[string]struct{}, decimals int32) (map[string]int64, bool) {
@@ -493,24 +463,20 @@ func buildMultiPayerBusinessLegs(
 			sourceKey = el.sourceKey
 		}
 		g := grossOut[payer]
-		var feeSats int64
+		var netOutSats int64
 		switch {
 		case sendOutSats == 0:
-			// fee-only payer: exactly one such payer on the tx → fee = chainFee
+			// fee-only payer: exactly one such payer on the tx → netOut = chainFee
 			if feeOnlyCount != 1 || chainFeeSats <= 0 {
 				return nil, false
 			}
-			feeSats = chainFeeSats
-		case amountStringMatchesSats(bl.TxFromAmount, sendOutSats, decimals):
-			// txFrom_i = sendOut_i → fee_i = 0 (整 UTXO 外送 / dust 业务份额等于 txFrom)
-			feeSats = 0
+			netOutSats = chainFeeSats
 		default:
 			if sendOutSats > g {
 				return nil, false
 			}
-			feeSats = g - sendOutSats
+			netOutSats = g
 		}
-		netOutSats := sendOutSats + feeSats
 		out = append(out, btcPayerLeg{
 			itemIndex:  itemIdx,
 			sourceKey:  sourceKey,

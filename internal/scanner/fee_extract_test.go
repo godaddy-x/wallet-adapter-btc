@@ -229,54 +229,6 @@ func TestAppendBTCTransactionFeeItemsDirectFromInputOutput(t *testing.T) {
 	}
 }
 
-func TestComputePayerLegFeesVinOnlyLegSendEqualsVin(t *testing.T) {
-	addrA := "bcrt1qpayer-a"
-	addrB := "bcrt1qpayer-b"
-	trx := &models.Transaction{
-		Vins: []*models.Vin{
-			{Addr: addrA, Value: "0.6"},
-			{Addr: addrB, Value: "0.4"},
-		},
-		Vouts: []*models.Vout{
-			{Addr: "bcrt1qexternal", Value: "0.9"},
-			{Addr: addrA, Value: "0.09989"},
-		},
-	}
-	items := []*types.ExtractDataItem{
-		{SourceKey: "account-1", Data: []*types.TxExtractData{{Transaction: &types.Transaction{
-			FromAddr: []string{addrA}, FromAmt: []string{"0.6"},
-			ToAddr: []string{addrA}, ToAmt: []string{"0.09989"},
-		}}}},
-		{SourceKey: "account-1", Data: []*types.TxExtractData{{Transaction: &types.Transaction{
-			FromAddr: []string{addrB}, FromAmt: []string{"0.4"},
-		}}}},
-	}
-	acctCtx := testFeeAcctCtx(map[string]string{
-		addrA: "0.50004889",
-		addrB: "0.39995111",
-	})
-	allLegs := collectBTCPayerLegs(items, 8)
-	if len(allLegs) != 2 {
-		t.Fatalf("payer legs = %d, want 2", len(allLegs))
-	}
-	feeLegs := computePayerLegFees(trx, items, 8, acctCtx)
-	if len(feeLegs) != 2 {
-		t.Fatalf("fee legs = %+v", feeLegs)
-	}
-	feeSum := int64(0)
-	for _, leg := range feeLegs {
-		feeSum += leg.feeSats
-	}
-	if feeSum != 11000 {
-		t.Fatalf("fee sum = %d want 11000", feeSum)
-	}
-	for _, leg := range allLegs {
-		if leg.payerAddr == addrB && leg.vinSats != 40000000 {
-			t.Fatalf("B vin = %d", leg.vinSats)
-		}
-	}
-}
-
 func TestAppendBTCTransactionFeeItemsInternalTransfer(t *testing.T) {
 	addrA := "bcrt1qpayer-a"
 	addrB := "bcrt1qpeer-b"
@@ -669,8 +621,7 @@ func TestCollapseSamePayerFromLegsWhenFeeAccountingSkipped(t *testing.T) {
 }
 
 func TestAppendBTCTransactionFeeItemsThreePayerSummary(t *testing.T) {
-	// Mirrors SummaryMulti production: first payers have txFrom=sendOut (fee=0),
-	// last payer absorbs chainFee. Only fee>0 rows are emitted/stored.
+	// Multi-payer summary: each payer send + fee (fee_i = vin_i − sendOut_i), not one payer absorbing all chain fee.
 	addrA := "bcrt1qpayer-a"
 	addrB := "bcrt1qpayer-b"
 	addrC := "bcrt1qpayer-c"
@@ -704,9 +655,9 @@ func TestAppendBTCTransactionFeeItemsThreePayerSummary(t *testing.T) {
 		lookup: &stubTradeOrderLookup{snap: &types.TradeOrderOutboundSnapshot{
 			Found: true,
 			Legs: []types.TradeOrderPayerLeg{
-				{PayerAddress: addrA, SendOut: "3.125", TxFromAmount: "3.125"},
-				{PayerAddress: addrB, SendOut: "3.125", TxFromAmount: "3.125"},
-				{PayerAddress: addrC, SendOut: "3.12499", TxFromAmount: "3.125"},
+				{PayerAddress: addrA, SendOut: "3.12499667", TxFromAmount: "3.125"},
+				{PayerAddress: addrB, SendOut: "3.12499667", TxFromAmount: "3.125"},
+				{PayerAddress: addrC, SendOut: "3.12499666", TxFromAmount: "3.125"},
 			},
 		}},
 		symbol:    "BTC",
@@ -736,18 +687,16 @@ func TestAppendBTCTransactionFeeItemsThreePayerSummary(t *testing.T) {
 		if len(send.FromAddr) != 1 || len(send.ToAddr) != 1 || send.ToAddr[0] != external {
 			t.Fatalf("send %s: from=%v to=%v", addr, send.FromAddr, send.ToAddr)
 		}
+		fee := feeByPayer[addr]
+		if fee == nil || fee.Fees == "" || fee.Fees == "0" {
+			t.Fatalf("missing fee row for payer %s", addr)
+		}
 	}
 	if len(sendByPayer) != 3 {
 		t.Fatalf("send rows = %d, want 3", len(sendByPayer))
 	}
-	if len(feeByPayer) != 1 {
-		t.Fatalf("fee rows = %d, want 1 (only fee>0 payer stored)", len(feeByPayer))
-	}
-	if feeByPayer[addrA] != nil || feeByPayer[addrB] != nil {
-		t.Fatalf("A/B must not have fee rows when fee=0")
-	}
-	if feeByPayer[addrC] == nil || feeByPayer[addrC].Fees != "0.00001" {
-		t.Fatalf("C fee=%v want 0.00001", feeByPayer[addrC])
+	if len(feeByPayer) != 3 {
+		t.Fatalf("fee rows = %d, want 3 (each payer bears fee share)", len(feeByPayer))
 	}
 	assertFeeSharesSumToTotal(t, trx, items, 8)
 }

@@ -457,7 +457,7 @@ func (d *BtcTransactionDecoder) buildRawTransaction(
 	fromAddrs, fromAmts = aggregateAddrAmountLegs(fromAddrs, fromAmts)
 	rawTx.TxFrom = joinAddrAmount(fromAddrs, fromAmts)
 	rawTx.TxTo = txTo
-	writePayerSendOutExtParam(rawTx, usedUTXO, externalOutFromRawTx(rawTx))
+	writePayerSendOutExtParam(rawTx, usedUTXO, externalOutFromRawTx(rawTx), to)
 	return nil
 }
 
