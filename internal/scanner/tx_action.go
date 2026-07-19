@@ -27,6 +27,14 @@ func inferBTCTxAction(trx *models.Transaction, leg *addrLeg, param types.ScanTar
 		}
 		return "receive"
 	case hasVin && !hasVout:
+		// Vin-only payer leg: multi-recipient same-account summary (sweep) must be send+fee,
+		// not internal just because change lands on another managed address.
+		if distinctPeerVoutAddrs(trx, legAddr) > 1 {
+			return "send"
+		}
+		if trxHasOutboundOutsideAccount(trx, param, leg.sourceKey) {
+			return "send"
+		}
 		if voutSameAccount(trx, param, leg.sourceKey, legAddr) {
 			return "internal"
 		}
@@ -72,6 +80,47 @@ func vinSameAccount(trx *models.Transaction, param types.ScanTargetParam, source
 			continue
 		}
 		if accountSourceKey(param, addr) == sourceKey {
+			return true
+		}
+	}
+	return false
+}
+
+// distinctPeerVoutAddrs counts unique output addresses other than the leg payer.
+func distinctPeerVoutAddrs(trx *models.Transaction, legAddr string) int {
+	if trx == nil {
+		return 0
+	}
+	seen := make(map[string]struct{})
+	for _, vout := range trx.Vouts {
+		if vout.Type == "OP_RETURN" {
+			continue
+		}
+		addr := normalizeScanAddress(vout.Addr)
+		if addr == "" || addr == legAddr {
+			continue
+		}
+		seen[addr] = struct{}{}
+	}
+	return len(seen)
+}
+
+// trxHasOutboundOutsideAccount reports a vout credited outside the leg's account
+// (external recipient or another managed account).
+func trxHasOutboundOutsideAccount(trx *models.Transaction, param types.ScanTargetParam, sourceKey string) bool {
+	if trx == nil || sourceKey == "" {
+		return false
+	}
+	for _, vout := range trx.Vouts {
+		if vout.Type == "OP_RETURN" {
+			continue
+		}
+		addr := normalizeScanAddress(vout.Addr)
+		if addr == "" {
+			continue
+		}
+		sk := accountSourceKey(param, addr)
+		if sk == "" || sk != sourceKey {
 			return true
 		}
 	}

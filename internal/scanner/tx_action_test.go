@@ -55,3 +55,58 @@ func TestInferBTCTxActionInternal(t *testing.T) {
 		t.Fatalf("got %q want internal", got)
 	}
 }
+
+func TestInferBTCTxActionSummaryVinOnlyWithSameAccountChange(t *testing.T) {
+	mainAddr := "bcrt1qmain"
+	changeAddr := "bcrt1qchange"
+	external := "bcrt1qexternal"
+	trx := &models.Transaction{
+		Vins: []*models.Vin{
+			{N: 0, Addr: changeAddr, Value: "0.0001"},
+			{N: 1, Addr: mainAddr, Value: "25"},
+		},
+		Vouts: []*models.Vout{
+			{N: 0, Addr: external, Value: "0.003"},
+			{N: 1, Addr: changeAddr, Value: "24.964"},
+		},
+	}
+	param := types.ScanTargetParam{
+		ScanTarget: map[string]interface{}{
+			mainAddr:   "acct-1",
+			changeAddr: "acct-1",
+		},
+	}
+	mainLeg := &addrLeg{
+		sourceKey: "acct-1",
+		vins:      []*models.Vin{trx.Vins[1]},
+	}
+	if got := inferBTCTxAction(trx, mainLeg, param); got != "send" {
+		t.Fatalf("main vin-only leg got %q want send", got)
+	}
+}
+
+func TestInferBTCTxActionSummarySameAccountMultiRecipient(t *testing.T) {
+	mainAddr := "bcrt1qmain"
+	peerA := "bcrt1qpeera"
+	peerB := "bcrt1qpeerb"
+	trx := &models.Transaction{
+		Vins: []*models.Vin{
+			{N: 0, Addr: mainAddr, Value: "50"},
+		},
+		Vouts: []*models.Vout{
+			{N: 0, Addr: peerA, Value: "0.003"},
+			{N: 1, Addr: peerB, Value: "49.96"},
+		},
+	}
+	param := types.ScanTargetParam{
+		ScanTarget: map[string]interface{}{
+			mainAddr: "acct-1",
+			peerA:    "acct-1",
+			peerB:    "acct-1",
+		},
+	}
+	mainLeg := &addrLeg{sourceKey: "acct-1", vins: []*models.Vin{trx.Vins[0]}}
+	if got := inferBTCTxAction(trx, mainLeg, param); got != "send" {
+		t.Fatalf("same-account multi-recipient summary got %q want send", got)
+	}
+}

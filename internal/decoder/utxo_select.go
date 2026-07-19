@@ -85,12 +85,15 @@ func selectUTXOsForPayment(
 	}
 
 	changeAmount := balanceSub(usedUTXO, totalSend, actualFees)
+	// Change must return to the payer that contributed the excess input (largest selected UTXO).
+	// sorted asc → last entry is largest; using [0] credits a sibling when multi-address inputs are combined.
+	changeAddr := usedUTXO[len(usedUTXO)-1].Address
 	return &utxoSelection{
 		UsedUTXO:     usedUTXO,
 		FeeRate:      feeRate,
 		Fees:         actualFees,
 		ChangeAmount: changeAmount,
-		ChangeAddr:   usedUTXO[0].Address,
+		ChangeAddr:   changeAddr,
 	}, nil
 }
 

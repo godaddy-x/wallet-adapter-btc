@@ -57,7 +57,7 @@ Requires `enableRBF=true` (default). Replace target must be **unconfirmed** (`co
 |-------|--------|
 | `wallet-adapter-btc` SpeedUp/Cancel build | ✅ |
 | `open_scanner_btc` `SpeedUpFromOriginTrade` / `CancelFromOriginTrade` | ✅ (DB snapshot → `createRawTransaction(..., speedUp)`, replaceable txid from submit chain) |
-| `open_stdrpc` SpeedUp/Cancel APIs | ✅ (EVM today; calls scanner RPC) |
+| `open_gateway` SpeedUp/Cancel APIs | ✅ (EVM today; calls scanner RPC) |
 
 ## Explicitly deferred
 
@@ -68,4 +68,4 @@ Requires `enableRBF=true` (default). Replace target must be **unconfirmed** (`co
 ## Related docs
 
 - [REGTEST_UTXO_TESTING.md](REGTEST_UTXO_TESTING.md) — regtest test priorities
-- [../open_stdrpc/docs/TRANSFER_SPEEDUP_FLOW.md](../../../work/coding/open_stdrpc/docs/TRANSFER_SPEEDUP_FLOW.md) — platform SpeedUp/Cancel API (EVM-oriented; BTC maps to RBF)
+- [../open_gateway/docs/TRANSFER_SPEEDUP_FLOW.md](../../../work/coding/open_gateway/docs/TRANSFER_SPEEDUP_FLOW.md) — platform SpeedUp/Cancel API (EVM-oriented; BTC maps to RBF)

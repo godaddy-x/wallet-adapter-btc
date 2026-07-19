@@ -63,6 +63,27 @@ func TestSelectUTXOsChangeOutput(t *testing.T) {
 	}
 }
 
+func TestSelectUTXOsChangeAddrUsesLargestInput(t *testing.T) {
+	// Sorted asc: small peer UTXO first, large main second; change must go to main (largest).
+	unspents := []*models.Unspent{
+		utxo("bcrt1qpeer", "0.0001"),
+		utxo("bcrt1qmain", "50"),
+	}
+	send := decimal.RequireFromString("0.003")
+	rate := decimal.RequireFromString("0.00001")
+
+	sel, err := selectUTXOsForPayment(unspents, send, rate, 10, 2, testFeeEstimator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sel.UsedUTXO) != 2 {
+		t.Fatalf("usedUTXO = %d want 2", len(sel.UsedUTXO))
+	}
+	if sel.ChangeAddr != "bcrt1qmain" {
+		t.Fatalf("change addr = %q want bcrt1qmain (largest input, not first sorted)", sel.ChangeAddr)
+	}
+}
+
 func TestSelectUTXOsInsufficientBalance(t *testing.T) {
 	unspents := []*models.Unspent{utxo("a", "0.01")}
 	send := decimal.RequireFromString("1.0")

@@ -7,7 +7,7 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.1.3
 	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/godaddy-x/wallet-adapter v1.0.8
+	github.com/godaddy-x/wallet-adapter v1.0.9
 	github.com/imroc/req v0.3.2
 	github.com/mailru/easyjson v0.9.1
 	github.com/shopspring/decimal v1.4.0
@@ -35,3 +35,5 @@ require (
 )
 
 replace github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.1
+
+//replace github.com/godaddy-x/wallet-adapter => ../../github/wallet-adapter
