@@ -65,11 +65,17 @@ func WalletEndpoint(baseURL, walletName string) string {
 
 // Call invokes JSON-RPC method on the chain endpoint.
 func (c *Client) Call(method string, params []interface{}) (*gjson.Result, error) {
+	if c == nil {
+		return nil, errors.New("rpc client is not configured")
+	}
 	return c.callAt(c.BaseURL, method, normalizeRPCParams(params))
 }
 
 // WalletCall invokes JSON-RPC on the configured wallet endpoint (listunspent, etc.).
 func (c *Client) WalletCall(method string, params []interface{}) (*gjson.Result, error) {
+	if c == nil {
+		return nil, errors.New("rpc client is not configured")
+	}
 	if c.WalletURL != "" {
 		return c.callAt(c.WalletURL, method, normalizeRPCParams(params))
 	}
@@ -78,6 +84,9 @@ func (c *Client) WalletCall(method string, params []interface{}) (*gjson.Result,
 
 // QueryWalletCall invokes JSON-RPC on the query wallet endpoint (gettransaction fallback).
 func (c *Client) QueryWalletCall(method string, params []interface{}) (*gjson.Result, error) {
+	if c == nil {
+		return nil, errors.New("rpc client is not configured")
+	}
 	url := c.QueryWalletURL
 	if url == "" {
 		url = c.WalletURL
@@ -90,6 +99,9 @@ func (c *Client) QueryWalletCall(method string, params []interface{}) (*gjson.Re
 
 // BroadcastCall invokes JSON-RPC on broadcast URL (defaults to BaseURL).
 func (c *Client) BroadcastCall(method string, params []interface{}) (*gjson.Result, error) {
+	if c == nil {
+		return nil, errors.New("rpc client is not configured")
+	}
 	url := c.BroadcastURL
 	if url == "" {
 		url = c.BaseURL
@@ -100,6 +112,9 @@ func (c *Client) BroadcastCall(method string, params []interface{}) (*gjson.Resu
 // BroadcastWalletCall invokes sendrawtransaction on a loaded wallet endpoint.
 // Prefers QueryWalletURL (e.g. /wallet/ops_watch) to avoid -19 Multiple wallets on multi-wallet nodes.
 func (c *Client) BroadcastWalletCall(method string, params []interface{}) (*gjson.Result, error) {
+	if c == nil {
+		return nil, errors.New("rpc client is not configured")
+	}
 	url := c.broadcastWalletURL()
 	return c.callAt(url, method, normalizeRPCParams(params))
 }
@@ -128,7 +143,7 @@ func normalizeRPCParams(params []interface{}) []interface{} {
 }
 
 func (c *Client) callAt(url, method string, params []interface{}) (*gjson.Result, error) {
-	if c.http == nil || url == "" {
+	if c == nil || c.http == nil || url == "" {
 		return nil, errors.New("rpc client is not configured")
 	}
 	body := map[string]interface{}{

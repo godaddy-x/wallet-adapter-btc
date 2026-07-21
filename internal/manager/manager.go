@@ -37,6 +37,11 @@ func (wm *WalletManager) LoadAssetsConfig(c adapterconfig.Configer) error {
 	cfg.MakeDataDir()
 	wm.parser = models.NewBlockParser(cfg)
 
+	// Keep previous clients if ping fails so concurrent scan goroutines
+	// do not observe a nil Client (node down / auto-recover failure).
+	prevClient := wm.Client
+	prevExplorer := wm.ExplorerClient
+
 	if cfg.RPCServerType == config.RPCServerExplorer {
 		wm.ExplorerClient = rpc.NewExplorer(cfg.ServerAPI)
 		wm.Client = nil
@@ -54,8 +59,8 @@ func (wm *WalletManager) LoadAssetsConfig(c adapterconfig.Configer) error {
 
 	height, err := wm.GetBlockHeight()
 	if err != nil {
-		wm.Client = nil
-		wm.ExplorerClient = nil
+		wm.Client = prevClient
+		wm.ExplorerClient = prevExplorer
 		return fmt.Errorf("btc node rpc ping (getblockcount) failed: %w", err)
 	}
 	if cfg.RPCServerType == config.RPCServerExplorer && height == 0 {
@@ -63,8 +68,8 @@ func (wm *WalletManager) LoadAssetsConfig(c adapterconfig.Configer) error {
 	} else if height == 0 {
 		// Regtest/mainnet genesis-only chain: verify block 0 is reachable.
 		if _, err := wm.GetBlockHash(0); err != nil {
-			wm.Client = nil
-			wm.ExplorerClient = nil
+			wm.Client = prevClient
+			wm.ExplorerClient = prevExplorer
 			return fmt.Errorf("btc node rpc ping (getblockhash 0) failed: %w", err)
 		}
 	}
