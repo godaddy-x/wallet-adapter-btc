@@ -36,6 +36,8 @@ type BtcBlockScanner struct {
 	scanLoopPaused      bool
 	scanLoopPauseCh     chan struct{}
 
+	scanBlockMu sync.Mutex // serializes ScanBlockWithResult (main loop vs prioritize)
+
 	accountCacheMu       sync.RWMutex
 	accountTargetCache   *sync.Map // address → accountID ("" = miss), block-scoped
 }
@@ -55,6 +57,9 @@ func (bs *BtcBlockScanner) ScanBlockOnce(height uint64) (*types.BlockScanResult,
 }
 
 func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanResult, error) {
+	bs.scanBlockMu.Lock()
+	defer bs.scanBlockMu.Unlock()
+
 	res := &types.BlockScanResult{
 		Height:           height,
 		Success:          false,
