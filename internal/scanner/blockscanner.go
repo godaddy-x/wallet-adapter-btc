@@ -36,7 +36,10 @@ type BtcBlockScanner struct {
 	scanLoopPaused      bool
 	scanLoopPauseCh     chan struct{}
 
-	scanBlockMu sync.Mutex // serializes ScanBlockWithResult (main loop vs prioritize)
+	scanBlockMu sync.Mutex // serializes ScanBlockWithResult (main loop vs nested Once)
+
+	priorityScanMu  sync.Mutex
+	priorityHeights []uint64 // drained by RunScanLoop only (RPC enqueues)
 
 	accountCacheMu       sync.RWMutex
 	accountTargetCache   *sync.Map // address → accountID ("" = miss), block-scoped
@@ -351,6 +354,8 @@ func (bs *BtcBlockScanner) RunScanLoop(params adaptscanner.ScanLoopParams) error
 
 	for {
 		bs.blockIfPaused()
+		bs.processPriorityScan()
+
 		latest, rpcErr := bs.GetGlobalMaxBlockHeightWithError()
 		if rpcErr != nil || latest == 0 {
 			bs.notifyTipRPCFailure(params.HandleBlock, "main_loop", rpcErr)
@@ -368,8 +373,11 @@ func (bs *BtcBlockScanner) RunScanLoop(params adaptscanner.ScanLoopParams) error
 			scanTo = scanFrom + maxBlocksPerScanRound - 1
 		}
 		for h := scanFrom; h <= scanTo; h++ {
+			bs.blockIfPaused()
+			bs.processPriorityScan()
+
 			res, err := bs.ScanBlockWithResult(h)
-			if params.HandleBlock != nil {
+			if params.HandleBlock != nil && res != nil {
 				params.HandleBlock(res)
 			}
 			if err != nil || res == nil || !res.Success {
@@ -385,21 +393,64 @@ func (bs *BtcBlockScanner) RunScanLoop(params adaptscanner.ScanLoopParams) error
 	}
 }
 
+// ScanBlockPrioritize enqueues heights for RunScanLoop (same goroutine as HandleBlock).
 func (bs *BtcBlockScanner) ScanBlockPrioritize(heights []uint64) error {
 	if !bs.scanLoopRunning.Load() {
 		return fmt.Errorf("RunScanLoop is not running")
 	}
-	for _, height := range heights {
-		res, err := bs.ScanBlockWithResult(height)
-		if err != nil {
-			return err
+	if len(heights) == 0 {
+		return nil
+	}
+	bs.priorityScanMu.Lock()
+	defer bs.priorityScanMu.Unlock()
+	seen := make(map[uint64]struct{}, len(bs.priorityHeights)+len(heights))
+	for _, h := range bs.priorityHeights {
+		seen[h] = struct{}{}
+	}
+	for _, h := range heights {
+		if _, ok := seen[h]; ok {
+			continue
 		}
-		res.Once = true
-		if bs.scanLoopHandleFunc != nil {
-			bs.scanLoopHandleFunc(res)
-		}
+		bs.priorityHeights = append(bs.priorityHeights, h)
+		seen[h] = struct{}{}
 	}
 	return nil
+}
+
+func (bs *BtcBlockScanner) processPriorityScan() {
+	bs.priorityScanMu.Lock()
+	heights := append([]uint64(nil), bs.priorityHeights...)
+	bs.priorityHeights = nil
+	bs.priorityScanMu.Unlock()
+	if len(heights) == 0 {
+		return
+	}
+	handle := bs.scanLoopHandleFunc
+	for _, h := range heights {
+		bs.blockIfPaused()
+		res, err := bs.ScanBlockWithResult(h)
+		if err != nil {
+			if res == nil {
+				res = &types.BlockScanResult{
+					Height:           h,
+					Success:          false,
+					ErrorReason:      err.Error(),
+					ExtractData:      make([]*types.ExtractDataItem, 0),
+					ContractReceipts: make([]*types.ContractReceiptItem, 0),
+					FailedTxIDs:      make([]string, 0),
+				}
+				if bs.wm != nil {
+					res.Symbol = bs.wm.Symbol()
+				}
+			}
+		}
+		if res != nil {
+			res.Once = true
+			if handle != nil {
+				handle(res)
+			}
+		}
+	}
 }
 
 func (bs *BtcBlockScanner) blockIfPaused() {
@@ -418,6 +469,8 @@ func (bs *BtcBlockScanner) sleep(interval time.Duration) {
 }
 
 func (bs *BtcBlockScanner) getPauseCh() <-chan struct{} {
+	bs.scanLoopMu.Lock()
+	defer bs.scanLoopMu.Unlock()
 	if bs.scanLoopPauseCh == nil {
 		bs.scanLoopPauseCh = make(chan struct{})
 	}
