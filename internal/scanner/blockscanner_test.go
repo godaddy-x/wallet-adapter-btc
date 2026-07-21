@@ -46,7 +46,7 @@ func TestExtractTransactionInternalKeepsPeerReceiveLeg(t *testing.T) {
 		trx.TxID: {payer: "0.01"},
 	})
 
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestExtractTransactionNonFeeLegFeesCanonical(t *testing.T) {
 		}
 		return nil
 	}
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestExtractTransactionPerVoutOutputIndex(t *testing.T) {
 		return nil
 	}
 
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestExtractTransactionMergesVinVoutPerAddress(t *testing.T) {
 		trx.TxID: {targetAddr: "0.9"},
 	})
 
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestExtractTransactionFeeSplitAcrossTwoPayerAddresses(t *testing.T) {
 		},
 	})
 
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestExtractTransactionAddressCaseInsensitive(t *testing.T) {
 		return nil
 	}
 
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestExtractTransactionSkipsZeroAmount(t *testing.T) {
 		return nil
 	}
 
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestExtractTransactionSkipsAddressScriptMismatch(t *testing.T) {
 		return nil
 	}
 
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestExtractTransactionSummaryVinOnlyWithSameAccountChange(t *testing.T) {
 		},
 	})
 
-	_, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	_, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err == nil {
 		t.Fatal("expected business accounting error when sendOut sum != external")
 	}
@@ -464,19 +464,25 @@ func TestExtractTransactionFailsUnresolvedVin(t *testing.T) {
 	wm := &manager.WalletManager{Config: config.NewConfig("BTC")}
 	bs := NewBlockScanner(wm)
 
+	watched := "bcrt1qwatched0000000000000000000000"
 	trx := &models.Transaction{
 		TxID: "unresolved-vin",
 		Vins: []*models.Vin{{TxID: "missing-prev", Vout: 0}},
 		Vouts: []*models.Vout{
-			{N: 0, Addr: "bcrt1qexternal000000000000000000000", Value: "1"},
+			{N: 0, Addr: watched, Value: "1"},
 		},
 	}
 
-	scanFn := func(param *types.ScanTargetParam) error { return nil }
+	scanFn := func(param *types.ScanTargetParam) error {
+		if _, ok := param.ScanTarget[watched]; ok {
+			param.ScanTarget[watched] = "account-1"
+		}
+		return nil
+	}
 
-	_, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	_, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err == nil {
-		t.Fatal("expected error for unresolved vin address")
+		t.Fatal("expected error for unresolved vin address on single-tx verify")
 	}
 }
 
@@ -520,7 +526,7 @@ func TestExtractTransactionManyVinSummary(t *testing.T) {
 		trx.TxID: {payer: "2500"},
 	})
 
-	items, err := bs.extractTransaction(trx, txIndex, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, txIndex, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +574,7 @@ func TestExtractTransactionManyVinSummaryWithEmbeddedPrevout(t *testing.T) {
 		trx.TxID: {payer: "2524.99998"},
 	})
 
-	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn))
+	items, err := bs.extractTransaction(trx, nil, adaptscanner.BlockScanTargetFunc(scanFn), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

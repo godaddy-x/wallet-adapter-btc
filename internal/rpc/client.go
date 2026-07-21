@@ -13,7 +13,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const defaultRPCTimeout = 10 * time.Second
+const defaultRPCTimeout = 60 * time.Second
 
 // Client is a Bitcoin Core JSON-RPC client.
 type Client struct {
@@ -152,7 +152,14 @@ func (c *Client) callAt(url, method string, params []interface{}) (*gjson.Result
 			resp.Get("error.message").String())
 	}
 	if !resp.Get("result").Exists() {
-		return nil, errors.New("rpc response is empty")
+		body := strings.TrimSpace(r.String())
+		if len(body) > 256 {
+			body = body[:256] + "..."
+		}
+		if body == "" {
+			return nil, fmt.Errorf("rpc response is empty: method=%s url=%s", method, url)
+		}
+		return nil, fmt.Errorf("rpc response missing result: method=%s url=%s body=%s", method, url, body)
 	}
 	result := resp.Get("result")
 	return &result, nil

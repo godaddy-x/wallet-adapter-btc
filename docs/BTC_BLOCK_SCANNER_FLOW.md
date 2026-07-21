@@ -1,6 +1,7 @@
 # BTC 扫块适配器流程（目标模型）
 
 权威产品与验收：`open_gateway/docs/BTC_SCANNER_FLOW.md`。  
+**当前技术实现（扫块链路、RPC、Mongo、性能）**：`open_gateway/docs/BTC_BLOCK_SCAN_TECH_FLOW.md`。  
 付款方会计（建单写应付 + 扫块恒等式）：[BTC_BUSINESS_SOURCE_PAYER_ACCOUNTING.md](BTC_BUSINESS_SOURCE_PAYER_ACCOUNTING.md)。
 
 | 组件 | 路径 |

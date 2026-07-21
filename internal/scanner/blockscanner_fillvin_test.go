@@ -28,12 +28,29 @@ func TestFillVinAddressesRefreshesPresetAddr(t *testing.T) {
 	}
 	txIndex := map[string]*models.Transaction{"prevtx": prevTx}
 
-	bs.fillVinAddresses(trx, txIndex)
+	bs.fillVinAddresses(trx, txIndex, nil, nil, false)
 
 	if trx.Vins[0].Addr != correctAddr {
 		t.Fatalf("Addr = %q, want %q", trx.Vins[0].Addr, correctAddr)
 	}
 	if trx.Vins[0].Value != "1.5" {
 		t.Fatalf("Value = %q, want 1.5", trx.Vins[0].Value)
+	}
+}
+
+func TestResolveVinPrevoutTxUsesBlockCache(t *testing.T) {
+	cache := map[string]*models.Transaction{
+		"prev": {
+			TxID: "prev",
+			Vouts: []*models.Vout{
+				{N: 0, Addr: "bcrt1qfromcache000000000000000000", Value: "2"},
+			},
+		},
+	}
+	wm := &manager.WalletManager{Config: config.NewConfig("BTC")}
+	bs := NewBlockScanner(wm)
+	got := bs.resolveVinPrevoutTx(&models.Vin{TxID: "prev", Vout: 0}, nil, cache)
+	if got == nil || got.Vouts[0].Addr != "bcrt1qfromcache000000000000000000" {
+		t.Fatalf("cache miss: %+v", got)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/godaddy-x/wallet-adapter-btc/internal/config"
 	"github.com/godaddy-x/wallet-adapter-btc/internal/models"
@@ -220,7 +221,7 @@ func (wm *WalletManager) GetBlockHash(height uint64) (string, error) {
 	return result.String(), nil
 }
 
-// GetBlock returns block by hash (verbosity 3 with prevout, fallback to 2).
+// GetBlock returns block by hash using getblock verbosity 3 (prevout required for scanning).
 func (wm *WalletManager) GetBlock(hash string) (*models.Block, error) {
 	if wm.Config.RPCServerType == config.RPCServerExplorer {
 		result, err := wm.ExplorerClient.Call("block/"+hash, nil, "GET")
@@ -229,14 +230,33 @@ func (wm *WalletManager) GetBlock(hash string) (*models.Block, error) {
 		}
 		return models.NewBlockByExplorer(result), nil
 	}
-	result, err := wm.Client.Call("getblock", []interface{}{hash, 3})
-	if err != nil {
-		result, err = wm.Client.Call("getblock", []interface{}{hash, 2})
-		if err != nil {
-			return nil, err
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+		result, err := wm.Client.Call("getblock", []interface{}{hash, 3})
+		if err == nil {
+			return wm.parser.NewBlock(result), nil
+		}
+		lastErr = err
+		if !isRetryableGetBlockError(err) {
+			break
 		}
 	}
-	return wm.parser.NewBlock(result), nil
+	return nil, fmt.Errorf("getblock(hash, 3) required for block scan (prevout): %w", lastErr)
+}
+
+func isRetryableGetBlockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "rpc response is empty") ||
+		strings.Contains(msg, "rpc response missing result") ||
+		strings.Contains(msg, "timeout") ||
+		strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "eof")
 }
 
 // GetBlockHeaderByHeight fetches block header fields at height.
