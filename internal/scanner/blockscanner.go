@@ -185,6 +185,37 @@ func (bs *BtcBlockScanner) GetGlobalMaxBlockHeightWithError() (uint64, error) {
 	return bs.wm.GetBlockHeight()
 }
 
+func (bs *BtcBlockScanner) tipRPCFailureResult(phase, errMsg string) *types.BlockScanResult {
+	symbol := ""
+	if bs.wm != nil && bs.wm.Config != nil {
+		symbol = bs.wm.Config.Symbol
+	}
+	cursor := bs.scanLoopCursor.Load()
+	next := cursor + 1
+	return &types.BlockScanResult{
+		Symbol:           symbol,
+		Height:           next,
+		Success:          false,
+		ErrorReason:      fmt.Sprintf("%s (phase=%s cursor=%d nextScanHeight=%d rpc=getblockcount)", errMsg, phase, cursor, next),
+		ExtractData:      make([]*types.ExtractDataItem, 0),
+		ContractReceipts: make([]*types.ContractReceiptItem, 0),
+		FailedTxIDs:      make([]string, 0),
+	}
+}
+
+func (bs *BtcBlockScanner) notifyTipRPCFailure(handle func(*types.BlockScanResult), phase string, rpcErr error) {
+	if handle == nil {
+		return
+	}
+	errMsg := ""
+	if rpcErr != nil {
+		errMsg = rpcErr.Error()
+	} else {
+		errMsg = "cannot get latest block height (returned 0)"
+	}
+	handle(bs.tipRPCFailureResult(phase, errMsg))
+}
+
 func (bs *BtcBlockScanner) ExtractTransactionAndReceiptData(txid string, scanTargetFunc adaptscanner.BlockScanTargetFunc) ([]*types.ExtractDataItem, []*types.ContractReceiptItem, error) {
 	tx, err := bs.wm.GetTransaction(txid)
 	if err != nil {
@@ -291,8 +322,9 @@ func (bs *BtcBlockScanner) RunScanLoop(params adaptscanner.ScanLoopParams) error
 
 	for {
 		bs.blockIfPaused()
-		latest := bs.GetGlobalMaxBlockHeight()
-		if latest == 0 {
+		latest, rpcErr := bs.GetGlobalMaxBlockHeightWithError()
+		if rpcErr != nil || latest == 0 {
+			bs.notifyTipRPCFailure(params.HandleBlock, "main_loop", rpcErr)
 			bs.sleep(params.Interval)
 			continue
 		}

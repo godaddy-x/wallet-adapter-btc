@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/godaddy-x/wallet-adapter-btc/internal/config"
@@ -583,5 +584,23 @@ func TestExtractTransactionManyVinSummaryWithEmbeddedPrevout(t *testing.T) {
 	}
 	if !hasTransactionFeeItem(items) {
 		t.Fatal("missing fee row")
+	}
+}
+
+func TestTipRPCFailureResult(t *testing.T) {
+	bs := NewBlockScanner(&manager.WalletManager{Config: config.NewConfig("BTC")})
+	bs.scanLoopCursor.Store(199)
+	res := bs.tipRPCFailureResult("main_loop", "rpc response is empty")
+	if res.Success {
+		t.Fatal("expected failure")
+	}
+	if res.Height != 200 {
+		t.Fatalf("height=%d", res.Height)
+	}
+	if res.Symbol != "BTC" {
+		t.Fatalf("symbol=%s", res.Symbol)
+	}
+	if !strings.Contains(res.ErrorReason, "getblockcount") {
+		t.Fatalf("ErrorReason=%q", res.ErrorReason)
 	}
 }
