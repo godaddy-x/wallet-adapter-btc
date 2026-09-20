@@ -98,7 +98,7 @@ func (bs *BtcBlockScanner) queryAccountTarget(targetFunc adaptscanner.BlockScanT
 }
 
 // beginBlockAccountTargetCache loads all block addresses in one scanTargetFunc call;
-// Mongo batching is handled inside open_scanner scanTargetFunc / GetAddresses.
+// Mongo batching is handled inside the host scanner's scanTargetFunc / GetAddresses.
 func (bs *BtcBlockScanner) beginBlockAccountTargetCache(
 	block *models.Block,
 	txIndex map[string]*models.Transaction,

@@ -20,7 +20,7 @@ import (
 const maxBlocksPerScanRound = 128
 
 // btcAddressNetOutputIndex marks a combined per-address extract (vin+vout or multi-leg)
-// so open_scanner nets balance in one tradeFlowPrep pass instead of separate debits/credits.
+// so the host scanner nets balance in one tradeFlowPrep pass instead of separate debits/credits.
 const btcAddressNetOutputIndex int64 = -3
 
 // BtcBlockScanner implements wallet-adapter BlockScanner for Bitcoin UTXO chains.
