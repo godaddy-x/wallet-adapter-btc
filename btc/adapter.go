@@ -90,6 +90,13 @@ func (a *BtcAdapter) LoadAssetsConfig(cfg interface{}) error {
 	return nil
 }
 
+// SetVerifyAPIs configures Phase C peer RPC pool (nodeConfig.verifyAPIs).
+func (a *BtcAdapter) SetVerifyAPIs(urls []string) {
+	if bs, ok := a.blockScan.(*btcscanner.BtcBlockScanner); ok {
+		bs.SetVerifyAPIs(urls)
+	}
+}
+
 func (a *BtcAdapter) InitAssetsConfig() (interface{}, error) {
 	return map[string]string{}, nil
 }

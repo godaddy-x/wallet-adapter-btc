@@ -69,7 +69,27 @@ type Block struct {
 	Height            uint64
 	Version           uint64
 	Time              uint64
+	NTx               uint64 // getblock nTx / explorer txCount; 0 when node omits field
 	TxDetails         []*Transaction
+}
+
+// OnChainTxCount returns declared transaction count in block (nTx when present).
+func (b *Block) OnChainTxCount() int {
+	if b == nil {
+		return 0
+	}
+	if b.NTx > 0 {
+		return int(b.NTx)
+	}
+	return len(b.TxDetails) + len(b.TxIDs)
+}
+
+// RpcTxEntryCount returns tx entries returned in getblock (objects + hash strings).
+func (b *Block) RpcTxEntryCount() int {
+	if b == nil {
+		return 0
+	}
+	return len(b.TxDetails) + len(b.TxIDs)
 }
 
 // Transaction parsed transaction.
@@ -129,6 +149,7 @@ func (p *BlockParser) NewBlock(json *gjson.Result) *Block {
 		Previousblockhash: gjson.Get(json.Raw, "previousblockhash").String(),
 		Version:           gjson.Get(json.Raw, "version").Uint(),
 		Time:              gjson.Get(json.Raw, "time").Uint(),
+		NTx:               gjson.Get(json.Raw, "nTx").Uint(),
 	}
 	txs := make([]string, 0)
 	txDetails := make([]*Transaction, 0)
@@ -157,12 +178,16 @@ func NewBlockByExplorer(json *gjson.Result) *Block {
 		Previousblockhash: gjson.Get(json.Raw, "previousblockhash").String(),
 		Height:            gjson.Get(json.Raw, "height").Uint(),
 		Time:              gjson.Get(json.Raw, "time").Uint(),
+		NTx:               gjson.Get(json.Raw, "txCount").Uint(),
 	}
 	txs := make([]string, 0)
 	for _, tx := range gjson.Get(json.Raw, "tx").Array() {
 		txs = append(txs, tx.String())
 	}
 	obj.TxIDs = txs
+	if obj.NTx == 0 && len(txs) > 0 {
+		obj.NTx = uint64(len(txs))
+	}
 	return obj
 }
 

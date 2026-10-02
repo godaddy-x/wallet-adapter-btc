@@ -43,6 +43,10 @@ type BtcBlockScanner struct {
 
 	accountCacheMu       sync.RWMutex
 	accountTargetCache   *sync.Map // address → accountID ("" = miss), block-scoped
+
+	// crossCheckGen: verifyAPIs peer pool; swapped on SetVerifyAPIs (Phase C).
+	crossCheckMu  sync.RWMutex
+	crossCheckGen *crossCheckPeerGen
 }
 
 // NewBlockScanner creates BTC block scanner.
@@ -102,6 +106,12 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 		res.Header.Confirmations = latest - height + 1
 	}
 
+	blockTag := fmt.Sprintf("height=%d hash=%s", height, block.Hash)
+	if err := verifyBlockPackageIntegrity(blockTag, block); err != nil {
+		res.ErrorReason = err.Error()
+		return res, err
+	}
+
 	txIndex := buildBlockTxIndex(block)
 	prevoutCache := make(map[string]*models.Transaction)
 	targetFunc := bs.ScanTargetFunc
@@ -110,25 +120,12 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 		defer bs.clearAccountTargetCache()
 	}
 
-	txList := block.TxDetails
-	if len(txList) > 0 {
-		res.TxTotal = uint64(len(txList))
-	} else {
-		res.TxTotal = uint64(len(block.TxIDs))
-		txList = make([]*models.Transaction, 0, len(block.TxIDs))
-		for _, txid := range block.TxIDs {
-			tx, err := bs.wm.GetTransaction(txid)
-			if err != nil {
-				res.FailedTxIDs = append(res.FailedTxIDs, txid)
-				continue
-			}
-			tx.BlockHeight = block.Height
-			tx.BlockHash = block.Hash
-			tx.Blocktime = int64(block.Time)
-			txIndex[txid] = tx
-			txList = append(txList, tx)
-		}
+	txList, loadErr := resolveBlockTxList(bs.wm, block, txIndex)
+	if err := verifyLoadedTxCount(blockTag, block, len(txList), loadErr); err != nil {
+		res.ErrorReason = err.Error()
+		return res, err
 	}
+	res.TxTotal = blockScanTxTotal(block)
 	bs.beginBlockAccountTargetCache(block, txIndex, targetFunc)
 	if !bs.blockHasManagedCandidate(block, txIndex, targetFunc) {
 		finalizeBlockScanResult(res)

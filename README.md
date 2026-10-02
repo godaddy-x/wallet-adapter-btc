@@ -6,7 +6,7 @@ Bitcoin [wallet-adapter](https://github.com/godaddy-x/wallet-adapter) subclass i
 
 ## Overview
 
-- **Base framework**: [wallet-adapter](https://github.com/godaddy-x/wallet-adapter) `ChainAdapter`
+- **Base framework**: [wallet-adapter](https://github.com/godaddy-x/wallet-adapter) `ChainAdapter`; **Phase C** promote cross-check via `SetVerifyAPIs` / `CrossCheckValidator` (requires wallet-adapter v1.0.10+; see open_gateway [SCANNER_CROSS_NODE_PROMOTE_CHECK.md](https://github.com/godaddy-x/open_gateway/blob/main/docs/SCANNER_CROSS_NODE_PROMOTE_CHECK.md) §5.4).
 - **Legacy reference**: [bitcoin-adapter](https://github.com/blocktree/bitcoin-adapter) (openwallet v2)
 - **Structure reference**: [wallet-adapter-eth](https://github.com/godaddy-x/wallet-adapter-eth)
 
@@ -52,6 +52,8 @@ wallet-adapter-btc/
 | `feeBumpMultiplier` | Default multiplier for RBF/CPFP fee bumps (default `1`) |
 | `enableRBF` | BIP125 replaceable transactions (default `true`) |
 | `dataDir` | Local data directory |
+
+Phase-A block package integrity (`block_integrity:`) is **always enforced** on scan (not configurable); see open_gateway `BLOCK_INTEGRITY_CHECK.md`.
 
 ### Address formats (mainnet vs testnet vs regtest)
 

@@ -60,7 +60,7 @@ type WalletConfig struct {
 
 	// Dust change policy (see docs/BTC_DUST_CHANGE_TO_FEE.md).
 	DustLimitSats         int64 // 0 = DefaultDustLimitSats (546); max MaxDustLimitSats
-	OmitChangeBelowDust   bool  // merge sub-dust change into miner fee
+	OmitChangeBelowDust bool // merge sub-dust change into miner fee
 }
 
 // NewConfig creates default config for the given symbol.
@@ -84,7 +84,7 @@ func NewConfig(symbol string) *WalletConfig {
 		FeeTargetBlocks:   2,
 		MinFeeRate:        decimal.RequireFromString("0.00001"),
 		FeeBumpMultiplier: decimal.NewFromInt(1),
-		EnableRBF:         true,
+		EnableRBF:           true,
 		OmitChangeBelowDust: true,
 	}
 }
