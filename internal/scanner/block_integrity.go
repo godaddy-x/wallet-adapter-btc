@@ -9,9 +9,13 @@ import (
 
 // Phase-A gate (see open_gateway docs/BLOCK_INTEGRITY_CHECK.md): fail with ErrorReason prefix block_integrity:.
 // Call after getblock, before any extract.
-func verifyBlockPackageIntegrity(blockTag string, block *models.Block) error {
+func verifyBlockPackageIntegrity(blockTag string, wantHeight uint64, block *models.Block) error {
 	if block == nil {
 		return fmt.Errorf("block_integrity: nil block at %s", blockTag)
+	}
+	if wantHeight > 0 && block.Height != wantHeight {
+		return fmt.Errorf("block_integrity: block height mismatch got %d want %d at %s",
+			block.Height, wantHeight, blockTag)
 	}
 	rpcEntries := block.RpcTxEntryCount()
 	if rpcEntries == 0 && block.OnChainTxCount() == 0 {

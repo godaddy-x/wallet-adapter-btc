@@ -107,7 +107,7 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 	}
 
 	blockTag := fmt.Sprintf("height=%d hash=%s", height, block.Hash)
-	if err := verifyBlockPackageIntegrity(blockTag, block); err != nil {
+	if err := verifyBlockPackageIntegrity(blockTag, height, block); err != nil {
 		res.ErrorReason = err.Error()
 		return res, err
 	}
