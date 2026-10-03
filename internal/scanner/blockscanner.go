@@ -85,6 +85,10 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 		res.ErrorReason = err.Error()
 		return res, err
 	}
+	if strings.TrimSpace(hash) == "" {
+		res.ErrorReason = fmt.Sprintf("block_integrity: block hash missing at height=%d", height)
+		return res, fmt.Errorf("%s", res.ErrorReason)
+	}
 	block, err := bs.wm.GetBlock(hash)
 	if err != nil {
 		res.ErrorReason = err.Error()

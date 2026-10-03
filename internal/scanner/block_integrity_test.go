@@ -10,6 +10,7 @@ import (
 func TestVerifyBlockPackageIntegrityVerboseOK(t *testing.T) {
 	block := &models.Block{
 		Height: 1,
+		Hash:   "0000000000000000000000000000000000000000000000000000000000000000",
 		NTx:    2,
 		TxDetails: []*models.Transaction{
 			{TxID: "aa"},
@@ -21,8 +22,16 @@ func TestVerifyBlockPackageIntegrityVerboseOK(t *testing.T) {
 	}
 }
 
+func TestVerifyBlockPackageIntegrityMissingBlockHash(t *testing.T) {
+	block := &models.Block{Height: 1, NTx: 0}
+	err := verifyBlockPackageIntegrity("h=1", 1, block)
+	if err == nil || !strings.Contains(err.Error(), "block hash missing") {
+		t.Fatalf("want missing block hash, got %v", err)
+	}
+}
+
 func TestVerifyBlockPackageIntegrityHeightMismatch(t *testing.T) {
-	block := &models.Block{Height: 2, NTx: 0}
+	block := &models.Block{Height: 2, Hash: "abc", NTx: 0}
 	err := verifyBlockPackageIntegrity("h=1", 1, block)
 	if err == nil || !strings.Contains(err.Error(), "height mismatch") {
 		t.Fatalf("want height mismatch, got %v", err)
@@ -32,6 +41,7 @@ func TestVerifyBlockPackageIntegrityHeightMismatch(t *testing.T) {
 func TestVerifyBlockPackageIntegrityNTxMismatch(t *testing.T) {
 	block := &models.Block{
 		Height: 1,
+		Hash:   "abc",
 		NTx:    3,
 		TxDetails: []*models.Transaction{
 			{TxID: "aa"},
@@ -46,6 +56,7 @@ func TestVerifyBlockPackageIntegrityNTxMismatch(t *testing.T) {
 func TestVerifyBlockPackageIntegrityMissingTxid(t *testing.T) {
 	block := &models.Block{
 		Height: 1,
+		Hash:   "abc",
 		NTx:    1,
 		TxDetails: []*models.Transaction{
 			{TxID: ""},
@@ -62,5 +73,27 @@ func TestVerifyLoadedTxCountMismatch(t *testing.T) {
 	err := verifyLoadedTxCount("h=1", block, 1, nil)
 	if err == nil || !strings.Contains(err.Error(), "block_integrity:") {
 		t.Fatalf("expected loaded count error, got %v", err)
+	}
+}
+
+func TestVerifyBlockPackageIntegrityDuplicateTxidVerbose(t *testing.T) {
+	block := &models.Block{
+		Height: 1, Hash: "abc", NTx: 2,
+		TxDetails: []*models.Transaction{{TxID: "AA"}, {TxID: "aa"}},
+	}
+	err := verifyBlockPackageIntegrity("h=1", 1, block)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("want duplicate txid, got %v", err)
+	}
+}
+
+func TestVerifyBlockPackageIntegrityDuplicateTxidList(t *testing.T) {
+	block := &models.Block{
+		Height: 1, Hash: "abc", NTx: 2,
+		TxIDs: []string{"txid1", "txid1"},
+	}
+	err := verifyBlockPackageIntegrity("h=1", 1, block)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("want duplicate txid, got %v", err)
 	}
 }

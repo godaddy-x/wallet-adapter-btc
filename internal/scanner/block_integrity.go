@@ -17,6 +17,9 @@ func verifyBlockPackageIntegrity(blockTag string, wantHeight uint64, block *mode
 		return fmt.Errorf("block_integrity: block height mismatch got %d want %d at %s",
 			block.Height, wantHeight, blockTag)
 	}
+	if strings.TrimSpace(block.Hash) == "" {
+		return fmt.Errorf("block_integrity: block hash missing at %s", blockTag)
+	}
 	rpcEntries := block.RpcTxEntryCount()
 	if rpcEntries == 0 && block.OnChainTxCount() == 0 {
 		return nil
@@ -34,12 +37,17 @@ func verifyBlockPackageIntegrity(blockTag string, wantHeight uint64, block *mode
 			return fmt.Errorf("block_integrity: declared %d txs but %d verbose objects at %s",
 				declared, len(block.TxDetails), blockTag)
 		}
+		seen := make(map[string]struct{}, len(block.TxDetails))
 		for _, tx := range block.TxDetails {
 			if tx == nil {
 				return fmt.Errorf("block_integrity: nil tx object at %s", blockTag)
 			}
-			if strings.TrimSpace(tx.TxID) == "" {
+			txid := strings.TrimSpace(tx.TxID)
+			if txid == "" {
 				return fmt.Errorf("block_integrity: missing txid in verbose block at %s", blockTag)
+			}
+			if err := markUniqueTxID(seen, txid, blockTag); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -48,11 +56,25 @@ func verifyBlockPackageIntegrity(blockTag string, wantHeight uint64, block *mode
 		return fmt.Errorf("block_integrity: declared %d txs but %d txids at %s",
 			declared, len(block.TxIDs), blockTag)
 	}
-	for _, txid := range block.TxIDs {
-		if strings.TrimSpace(txid) == "" {
+	seen := make(map[string]struct{}, len(block.TxIDs))
+	for _, raw := range block.TxIDs {
+		txid := strings.TrimSpace(raw)
+		if txid == "" {
 			return fmt.Errorf("block_integrity: empty txid in block at %s", blockTag)
 		}
+		if err := markUniqueTxID(seen, txid, blockTag); err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+func markUniqueTxID(seen map[string]struct{}, txid, blockTag string) error {
+	key := strings.ToLower(txid)
+	if _, dup := seen[key]; dup {
+		return fmt.Errorf("block_integrity: duplicate txid %s at %s", txid, blockTag)
+	}
+	seen[key] = struct{}{}
 	return nil
 }
 
