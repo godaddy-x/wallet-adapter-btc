@@ -67,6 +67,8 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 	bs.scanBlockMu.Lock()
 	defer bs.scanBlockMu.Unlock()
 
+	scanStart := time.Now()
+	var extractStart time.Time
 	res := &types.BlockScanResult{
 		Height:           height,
 		Success:          false,
@@ -74,13 +76,25 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 		ExtractData:      make([]*types.ExtractDataItem, 0),
 		ContractReceipts: make([]*types.ContractReceiptItem, 0),
 	}
+	defer func() {
+		end := time.Now()
+		res.ScanDurationMs = end.Sub(scanStart).Milliseconds()
+		if !extractStart.IsZero() {
+			res.FetchDurationMs = extractStart.Sub(scanStart).Milliseconds()
+			res.ExtractDurationMs = end.Sub(extractStart).Milliseconds()
+		} else {
+			res.FetchDurationMs = res.ScanDurationMs
+		}
+	}()
 	if bs.wm == nil || bs.wm.Config == nil {
 		res.ErrorReason = "wallet manager is nil"
 		return res, fmt.Errorf("wallet manager is nil")
 	}
 	res.Symbol = bs.wm.Symbol()
 
+	hashRPCStart := time.Now()
 	hash, err := bs.wm.GetBlockHash(height)
+	res.BlockRpcMs = time.Since(hashRPCStart).Milliseconds()
 	if err != nil {
 		res.ErrorReason = err.Error()
 		return res, err
@@ -90,7 +104,9 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 		res.ErrorReason = fmt.Sprintf("block_integrity: block hash missing at height=%d", height)
 		return res, fmt.Errorf("%s", res.ErrorReason)
 	}
+	blockRPCStart := time.Now()
 	block, err := bs.wm.GetBlock(hash)
+	res.ReceiptsRpcMs = time.Since(blockRPCStart).Milliseconds()
 	if err != nil {
 		res.ErrorReason = err.Error()
 		return res, err
@@ -141,6 +157,7 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 		return res, nil
 	}
 
+	extractStart = time.Now()
 	for _, tx := range txList {
 		if tx == nil {
 			continue
