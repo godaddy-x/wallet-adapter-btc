@@ -217,13 +217,13 @@ func (wm *WalletManager) GetBlockHash(height uint64) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return result.Get("blockHash").String(), nil
+		return strings.TrimSpace(result.Get("blockHash").String()), nil
 	}
 	result, err := wm.Client.Call("getblockhash", []interface{}{height})
 	if err != nil {
 		return "", err
 	}
-	return result.String(), nil
+	return strings.TrimSpace(result.String()), nil
 }
 
 // GetBlock returns block by hash using getblock verbosity 3 (prevout required for scanning).
@@ -298,7 +298,11 @@ func (wm *WalletManager) GetTransaction(txid string) (*models.Transaction, error
 		if err != nil {
 			return nil, err
 		}
-		return wm.parser.NewTxByExplorer(result), nil
+		tx := wm.parser.NewTxByExplorer(result)
+		if err := validateRequestedTxID(txid, tx.TxID); err != nil {
+			return nil, err
+		}
+		return tx, nil
 	}
 	result, err := wm.Client.Call("getrawtransaction", []interface{}{txid, true})
 	if err != nil {
@@ -310,7 +314,26 @@ func (wm *WalletManager) GetTransaction(txid string) (*models.Transaction, error
 		}
 		return nil, err
 	}
-	return wm.parser.NewTxByCore(result), nil
+	tx := wm.parser.NewTxByCore(result)
+	if err := validateRequestedTxID(txid, tx.TxID); err != nil {
+		return nil, err
+	}
+	return tx, nil
+}
+
+func validateRequestedTxID(requested, got string) error {
+	requested = strings.TrimSpace(requested)
+	got = strings.TrimSpace(got)
+	if requested == "" {
+		return fmt.Errorf("txid is empty")
+	}
+	if got == "" {
+		return fmt.Errorf("transaction response missing txid for %s", requested)
+	}
+	if !strings.EqualFold(requested, got) {
+		return fmt.Errorf("txid mismatch: requested %s got %s", requested, got)
+	}
+	return nil
 }
 
 func (wm *WalletManager) getTransactionByWallet(txid string) (*models.Transaction, error) {
@@ -322,7 +345,11 @@ func (wm *WalletManager) getTransactionByWallet(txid string) (*models.Transactio
 		return nil, err
 	}
 	if decoded := gjson.Get(result.Raw, "decoded"); decoded.Exists() && decoded.IsObject() {
-		return wm.parser.NewTxByCore(&decoded), nil
+		tx := wm.parser.NewTxByCore(&decoded)
+		if err := validateRequestedTxID(txid, tx.TxID); err != nil {
+			return nil, err
+		}
+		return tx, nil
 	}
 	return nil, fmt.Errorf("wallet transaction decode unavailable")
 }

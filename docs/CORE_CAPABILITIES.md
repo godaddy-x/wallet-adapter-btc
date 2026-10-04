@@ -2,6 +2,21 @@
 
 Scope: **native BTC only**. Inscriptions / ordinals / ecosystem assets are out of scope until core UTXO flows are stable.
 
+## 唯一设计文档
+
+**产品规则、扫块 extract、粉尘找零、RBF、outputIndex、会计形状** 均在 open_gateway 单文档：
+
+**[BTC_SCANNER_FLOW.md](https://github.com/godaddy-x/open_gateway/blob/main/docs/BTC_SCANNER_FLOW.md)**
+
+| 本文档章节（旧） | 合并后位置 |
+|------------------|------------|
+| Capability matrix / 出站闭环 | BTC_SCANNER_FLOW §5 |
+| SpeedUp / Cancel | BTC_SCANNER_FLOW §7 |
+| Block scan extract | BTC_SCANNER_FLOW §8–§9 |
+| Dust change → fee | BTC_SCANNER_FLOW §6 |
+
+本文件仅保留 **能力矩阵速查**；实现细节以 §9 与代码为准。
+
 ## Capability matrix
 
 | ETH baseline | BTC implementation | Status |
@@ -18,53 +33,8 @@ Scope: **native BTC only**. Inscriptions / ordinals / ecosystem assets are out o
 | Summary sweep | `CreateSummaryRawTransactionWithError` | ✅ |
 | Smart contract / batch / tokens | N/A for BTC core | ⏸ deferred |
 
-## End-to-end closed loop (production path)
-
-```text
-PublicKeyToAddress → CreateRawTransaction → MPC sign → VerifyRawTransaction
-  → PrecomputeSubmitTxID → SubmitRawTransaction → block scan extract → confirm credit
-```
-
-## SpeedUp / Cancel (aligned with ETH `types.SpeedUp`)
-
-ETH uses **same nonce + higher gas**. BTC uses **same inputs + BIP125 RBF + higher feerate (BTC/KB)**.
-
-| Field | ETH | BTC |
-|-------|-----|-----|
-| `speedUp.nonce` | on-chain nonce | **origin txid** (tx to replace) |
-| `speedUp.fromAddress` | payer address | change / cancel refund address |
-| `speedUp.feeRate` | gas price | feerate BTC/KB |
-| `speedUp.feeBumpPercent` | +N% gas | +N% feerate |
-| `speedUp.feeBumpWei` | +wei | +BTC/KB increment |
-
-**SpeedUp:** scanner restores original `to` from DB snapshot; adapter rebuilds with origin inputs, same outputs, reduced change / higher fee.
-
-**Cancel:** scanner sets `to[from]=0`; adapter builds single output returning `inputs − fee` to `fromAddress` (ETH 0-value self-send equivalent).
-
-**Prerequisites (BTC-specific):**
-
-| Rule | ETH | BTC |
-|------|-----|-----|
-| Must `SubmitTrade` before SpeedUp/Cancel | optional (same nonce offline) | **required** — origin tx must be in mempool |
-| Chained SpeedUp (same `originSid`) | same nonce anchor | supported — scanner walks replacement chain (origin + speed-up/cancel children) and picks the **newest unconfirmed** submit txid |
-| `enableRBF` on scanner node | N/A | **required** (default `true`) — origin tx must be BIP125 replaceable |
-
-Requires `enableRBF=true` (default). Replace target must be **unconfirmed** (`confirmations=0`).
-
-## Scanner / stdrpc integration
-
-| Layer | Status |
-|-------|--------|
-| `wallet-adapter-btc` SpeedUp/Cancel build | ✅ |
-| Scanner node `SpeedUpFromOriginTrade` / `CancelFromOriginTrade` | ✅ (DB snapshot → `createRawTransaction(..., speedUp)`, replaceable txid from submit chain) |
-| Platform SpeedUp/Cancel APIs | ✅ (EVM today; calls scanner RPC) |
-
-## Explicitly deferred
-
-- Inscriptions / ordinals / BRC-20
-- Omni / token layers
-- Batch contract (dataType=4) — BTC uses native multi-output or summary sweep instead
-
 ## Related docs
 
+- [BTC_SCANNER_FLOW.md](https://github.com/godaddy-x/open_gateway/blob/main/docs/BTC_SCANNER_FLOW.md) — **唯一权威**
 - [REGTEST_UTXO_TESTING.md](REGTEST_UTXO_TESTING.md) — regtest test priorities
+- [internal/scanner/BTC_SCANNER_EXTRACT_FLOW.md](../internal/scanner/BTC_SCANNER_EXTRACT_FLOW.md) — 代码索引

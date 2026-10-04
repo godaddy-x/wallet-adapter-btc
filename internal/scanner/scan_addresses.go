@@ -61,10 +61,7 @@ func vinCandidateAddress(input *models.Vin, txIndex map[string]*models.Transacti
 	if a := normalizeScanAddress(input.Addr); a != "" {
 		return a
 	}
-	if txIndex == nil {
-		return ""
-	}
-	preTx := txIndex[input.TxID]
+	preTx := lookupTxIndex(txIndex, input.TxID)
 	if preTx == nil || int(input.Vout) >= len(preTx.Vouts) {
 		return ""
 	}

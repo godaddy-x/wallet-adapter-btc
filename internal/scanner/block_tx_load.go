@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/godaddy-x/wallet-adapter-btc/internal/manager"
 	"github.com/godaddy-x/wallet-adapter-btc/internal/models"
@@ -35,14 +36,19 @@ func resolveBlockTxList(wm *manager.WalletManager, block *models.Block, txIndex 
 	if len(block.TxDetails) > 0 {
 		return block.TxDetails, nil
 	}
+	blockTag := fmt.Sprintf("height=%d hash=%s", block.Height, block.Hash)
 	txList := make([]*models.Transaction, 0, len(block.TxIDs))
 	for _, txid := range block.TxIDs {
+		txid = strings.TrimSpace(txid)
 		tx, err := wm.GetTransaction(txid)
 		if err != nil {
 			return nil, fmt.Errorf("missing verbose tx %s: %w", txid, err)
 		}
+		if err := verifyTxBelongsToBlock(tx, block, txid, blockTag); err != nil {
+			return nil, err
+		}
 		stampTxBlockContext(tx, block)
-		txIndex[txid] = tx
+		storeTxIndex(txIndex, tx)
 		txList = append(txList, tx)
 	}
 	return txList, nil

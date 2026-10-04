@@ -85,12 +85,18 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 		res.ErrorReason = err.Error()
 		return res, err
 	}
-	if strings.TrimSpace(hash) == "" {
+	hash = strings.TrimSpace(hash)
+	if hash == "" {
 		res.ErrorReason = fmt.Sprintf("block_integrity: block hash missing at height=%d", height)
 		return res, fmt.Errorf("%s", res.ErrorReason)
 	}
 	block, err := bs.wm.GetBlock(hash)
 	if err != nil {
+		res.ErrorReason = err.Error()
+		return res, err
+	}
+	blockTag := fmt.Sprintf("height=%d hash=%s", height, hash)
+	if err := verifyRequestedBlockHash(hash, block.Hash, blockTag); err != nil {
 		res.ErrorReason = err.Error()
 		return res, err
 	}
@@ -110,7 +116,6 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 		res.Header.Confirmations = latest - height + 1
 	}
 
-	blockTag := fmt.Sprintf("height=%d hash=%s", height, block.Hash)
 	if err := verifyBlockPackageIntegrity(blockTag, height, block); err != nil {
 		res.ErrorReason = err.Error()
 		return res, err
@@ -151,12 +156,35 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 
 func buildBlockTxIndex(block *models.Block) map[string]*models.Transaction {
 	index := make(map[string]*models.Transaction, len(block.TxDetails))
+	if block == nil {
+		return index
+	}
 	for _, tx := range block.TxDetails {
-		if tx != nil && tx.TxID != "" {
-			index[tx.TxID] = tx
-		}
+		storeTxIndex(index, tx)
 	}
 	return index
+}
+
+func storeTxIndex(index map[string]*models.Transaction, tx *models.Transaction) {
+	if index == nil || tx == nil {
+		return
+	}
+	key := strings.ToLower(strings.TrimSpace(tx.TxID))
+	if key == "" {
+		return
+	}
+	index[key] = tx
+}
+
+func lookupTxIndex(index map[string]*models.Transaction, txid string) *models.Transaction {
+	if index == nil {
+		return nil
+	}
+	key := strings.ToLower(strings.TrimSpace(txid))
+	if key == "" {
+		return nil
+	}
+	return index[key]
 }
 
 func finalizeBlockScanResult(res *types.BlockScanResult) {
@@ -318,7 +346,7 @@ func (bs *BtcBlockScanner) VerifyTransactionMatch(txid string, expected *types.T
 	if !verify.Verified {
 		return out, nil
 	}
-	if expected != nil && expected.BlockHash != "" && expected.BlockHash != verify.BlockHash {
+	if expected != nil && expected.BlockHash != "" && !strings.EqualFold(expected.BlockHash, verify.BlockHash) {
 		out.Verified = false
 		out.Reason = "block hash mismatch"
 	}
@@ -523,11 +551,18 @@ func (bs *BtcBlockScanner) extractTransaction(trx *models.Transaction, txIndex m
 	if scanTargetFunc == nil {
 		return []*types.ExtractDataItem{}, nil
 	}
+	blockScan := txIndex != nil
+	// Single-tx path: resolve prevouts before touch so managed vin-only spends are detected.
+	// Block scan: touch first, then fill only managed vins (avoids prevout RPC for unrelated txs).
+	if !blockScan {
+		bs.fillVinAddresses(trx, txIndex, prevoutCache, scanTargetFunc, false)
+	}
 	if !bs.txTouchesManaged(trx, txIndex, scanTargetFunc) {
 		return []*types.ExtractDataItem{}, nil
 	}
-	blockScan := txIndex != nil
-	bs.fillVinAddresses(trx, txIndex, prevoutCache, scanTargetFunc, blockScan)
+	if blockScan {
+		bs.fillVinAddresses(trx, txIndex, prevoutCache, scanTargetFunc, true)
+	}
 	param, matched := bs.buildManagedScanTargetParam(trx, txIndex, scanTargetFunc)
 	if err := validateVinAddresses(trx, blockScan, param); err != nil {
 		return nil, err
@@ -585,7 +620,7 @@ func (bs *BtcBlockScanner) extractTransaction(trx *models.Transaction, txIndex m
 		fromAmts := make([]string, 0, len(leg.vins))
 		txInputs := make([]*types.TxInput, 0, len(leg.vins))
 		for _, input := range leg.vins {
-			a := normalizeScanAddress(input.Addr)
+			a := ledgerScanAddress(input.Addr)
 			fromAddrs = append(fromAddrs, a)
 			fromAmts = append(fromAmts, input.Value)
 			txInputs = append(txInputs, &types.TxInput{
@@ -612,7 +647,7 @@ func (bs *BtcBlockScanner) extractTransaction(trx *models.Transaction, txIndex m
 		txOutputs := make([]*types.TxOutPut, 0, len(leg.vouts))
 		var amountSum string
 		for _, output := range leg.vouts {
-			a := normalizeScanAddress(output.Addr)
+			a := ledgerScanAddress(output.Addr)
 			toAddrs = append(toAddrs, a)
 			toAmts = append(toAmts, output.Value)
 			txOutputs = append(txOutputs, &types.TxOutPut{
@@ -787,7 +822,7 @@ func (bs *BtcBlockScanner) fillVinAddresses(
 		if input == nil || len(input.Coinbase) > 0 {
 			continue
 		}
-		fromBlockIndex := txIndex != nil && txIndex[input.TxID] != nil
+		fromBlockIndex := lookupTxIndex(txIndex, input.TxID) != nil
 		if blockScan && !bs.vinTouchesManagedTarget(input, txIndex, scanTargetFunc) {
 			continue
 		}
@@ -814,13 +849,12 @@ func (bs *BtcBlockScanner) resolveVinPrevoutTx(input *models.Vin, txIndex map[st
 	if input == nil || input.TxID == "" {
 		return nil
 	}
-	if txIndex != nil {
-		if preTx := txIndex[input.TxID]; preTx != nil {
-			return preTx
-		}
+	if preTx := lookupTxIndex(txIndex, input.TxID); preTx != nil {
+		return preTx
 	}
+	cacheKey := strings.ToLower(strings.TrimSpace(input.TxID))
 	if prevoutCache != nil {
-		if preTx := prevoutCache[input.TxID]; preTx != nil {
+		if preTx := prevoutCache[cacheKey]; preTx != nil {
 			return preTx
 		}
 	}
@@ -835,7 +869,7 @@ func (bs *BtcBlockScanner) resolveVinPrevoutTx(input *models.Vin, txIndex map[st
 		return nil
 	}
 	if prevoutCache != nil {
-		prevoutCache[input.TxID] = preTx
+		prevoutCache[cacheKey] = preTx
 	}
 	return preTx
 }
@@ -849,6 +883,11 @@ func resolveSourceKey(param types.ScanTargetParam, addr string) string {
 
 func normalizeScanAddress(addr string) string {
 	return strings.ToLower(strings.TrimSpace(addr))
+}
+
+// ledgerScanAddress is what we write to FromAddr/ToAddr/Recharge (RPC casing preserved; not ETH-style lowercase).
+func ledgerScanAddress(addr string) string {
+	return strings.TrimSpace(addr)
 }
 
 func validExtractAmount(value string) bool {

@@ -126,6 +126,8 @@ Regtest UTXO test priorities (multi-input, change, RBF, CPFP): [docs/REGTEST_UTX
 
 ETH baseline alignment (native BTC core scope): [docs/CORE_CAPABILITIES.md](docs/CORE_CAPABILITIES.md).
 
+Block scan / extract design (Phase A, single-tx path, outputIndex): [open_gateway BTC_SCANNER_FLOW.md](https://github.com/godaddy-x/open_gateway/blob/main/docs/BTC_SCANNER_FLOW.md).
+
 ### Block scan security
 
 - **Address/script cross-check**: `ParseVoutFromCore` clears mismatched addresses; extract step re-validates when script is present

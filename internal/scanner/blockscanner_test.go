@@ -460,6 +460,77 @@ func TestExtractTransactionSummaryVinOnlyWithSameAccountChange(t *testing.T) {
 	}
 }
 
+func TestSingleTxFillVinBeforeTouchDetectsManagedSpend(t *testing.T) {
+	bs := NewBlockScanner(&manager.WalletManager{Config: config.NewConfig("BTC")})
+
+	payer := "bcrt1qpayer0000000000000000000000000"
+	external := "bcrt1qexternal000000000000000000000"
+	prevID := "prev-outbound"
+	trx := &models.Transaction{
+		TxID: "spend-only",
+		Vins: []*models.Vin{{TxID: prevID, Vout: 0}},
+		Vouts: []*models.Vout{
+			{N: 0, Addr: external, Value: "1"},
+		},
+	}
+	prevoutCache := map[string]*models.Transaction{
+		prevID: {
+			TxID: prevID,
+			Vouts: []*models.Vout{
+				{N: 0, Addr: payer, Value: "1"},
+			},
+		},
+	}
+	scanFn := adaptscanner.BlockScanTargetFunc(func(param *types.ScanTargetParam) error {
+		if _, ok := param.ScanTarget[normalizeScanAddress(payer)]; ok {
+			param.ScanTarget[normalizeScanAddress(payer)] = "account-1"
+		}
+		return nil
+	})
+
+	if bs.txTouchesManaged(trx, nil, scanFn) {
+		t.Fatal("vin-only managed spend must not match before prevout fill")
+	}
+	bs.fillVinAddresses(trx, nil, prevoutCache, scanFn, false)
+	if !bs.txTouchesManaged(trx, nil, scanFn) {
+		t.Fatal("expected managed touch after single-tx prevout fill")
+	}
+}
+
+func TestExtractBlockScanSkipsWhenNotManagedWithoutPrevoutCache(t *testing.T) {
+	wm := &manager.WalletManager{Config: config.NewConfig("BTC")}
+	bs := NewBlockScanner(wm)
+
+	external := "bcrt1qexternal000000000000000000000"
+	prevID := "prev-ext"
+	trx := &models.Transaction{
+		TxID: "unrelated",
+		Vins: []*models.Vin{{TxID: prevID, Vout: 0}},
+		Vouts: []*models.Vout{
+			{N: 0, Addr: external, Value: "1"},
+		},
+	}
+	txIndex := map[string]*models.Transaction{
+		prevID: {
+			TxID: prevID,
+			Vouts: []*models.Vout{
+				{N: 0, Addr: external, Value: "1"},
+			},
+		},
+	}
+	scanFn := func(param *types.ScanTargetParam) error {
+		return nil
+	}
+
+	items, err := bs.extractTransaction(trx, txIndex, adaptscanner.BlockScanTargetFunc(scanFn), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("want no extract for unrelated block tx, got %d items", len(items))
+	}
+}
+
 func TestExtractTransactionFailsUnresolvedVin(t *testing.T) {
 	wm := &manager.WalletManager{Config: config.NewConfig("BTC")}
 	bs := NewBlockScanner(wm)

@@ -97,3 +97,34 @@ func TestVerifyBlockPackageIntegrityDuplicateTxidList(t *testing.T) {
 		t.Fatalf("want duplicate txid, got %v", err)
 	}
 }
+
+func TestVerifyRequestedBlockHash(t *testing.T) {
+	if err := verifyRequestedBlockHash("Aa", "aa", "t"); err != nil {
+		t.Fatal(err)
+	}
+	err := verifyRequestedBlockHash("aaa", "bbb", "t")
+	if err == nil || !strings.Contains(err.Error(), "block hash mismatch") {
+		t.Fatalf("want mismatch, got %v", err)
+	}
+}
+
+func TestVerifyTxBelongsToBlock(t *testing.T) {
+	block := &models.Block{Height: 10, Hash: "blockhash"}
+	tx := &models.Transaction{TxID: "Aa", BlockHash: "BLOCKHASH", BlockHeight: 10}
+	if err := verifyTxBelongsToBlock(tx, block, "aa", "t"); err != nil {
+		t.Fatal(err)
+	}
+	tx.BlockHash = "other"
+	err := verifyTxBelongsToBlock(tx, block, "aa", "t")
+	if err == nil || !strings.Contains(err.Error(), "blockhash") {
+		t.Fatalf("want blockhash mismatch, got %v", err)
+	}
+}
+
+func TestLookupTxIndexCaseInsensitive(t *testing.T) {
+	idx := map[string]*models.Transaction{}
+	storeTxIndex(idx, &models.Transaction{TxID: "AbC"})
+	if lookupTxIndex(idx, "abc") == nil {
+		t.Fatal("expected case-insensitive lookup")
+	}
+}
