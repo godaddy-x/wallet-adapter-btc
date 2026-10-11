@@ -31,10 +31,7 @@ type BtcBlockScanner struct {
 	scanLoopRunning    atomic.Bool
 	scanLoopCursor     atomic.Uint64
 	scanLoopHandleFunc func(*types.BlockScanResult)
-	scanLoopMu          sync.Mutex
-	scanLoopCond        *sync.Cond
-	scanLoopPaused      bool
-	scanLoopPauseCh     chan struct{}
+	scanLoop *adaptscanner.LoopPause
 
 	scanBlockMu sync.Mutex // serializes ScanBlockWithResult (main loop vs nested Once)
 
@@ -55,7 +52,7 @@ func NewBlockScanner(wm *manager.WalletManager) *BtcBlockScanner {
 		Base: adaptscanner.NewBlockScannerBase(),
 		wm:   wm,
 	}
-	bs.scanLoopCond = sync.NewCond(&bs.scanLoopMu)
+	bs.scanLoop = adaptscanner.NewLoopPause()
 	return bs
 }
 
@@ -399,7 +396,7 @@ func (bs *BtcBlockScanner) RunScanLoop(params adaptscanner.ScanLoopParams) error
 	}
 
 	for {
-		bs.blockIfPaused()
+		bs.scanLoop.BlockIfPaused()
 		bs.processPriorityScan()
 
 		latest, rpcErr := bs.GetGlobalMaxBlockHeightWithError()
@@ -419,7 +416,7 @@ func (bs *BtcBlockScanner) RunScanLoop(params adaptscanner.ScanLoopParams) error
 			scanTo = scanFrom + maxBlocksPerScanRound - 1
 		}
 		for h := scanFrom; h <= scanTo; h++ {
-			bs.blockIfPaused()
+			bs.scanLoop.BlockIfPaused()
 			bs.processPriorityScan()
 
 			res, err := bs.ScanBlockWithResult(h)
@@ -473,7 +470,7 @@ func (bs *BtcBlockScanner) processPriorityScan() {
 	}
 	handle := bs.scanLoopHandleFunc
 	for _, h := range heights {
-		bs.blockIfPaused()
+		bs.scanLoop.BlockIfPaused()
 		res, err := bs.ScanBlockWithResult(h)
 		if err != nil {
 			if res == nil {
@@ -499,52 +496,21 @@ func (bs *BtcBlockScanner) processPriorityScan() {
 	}
 }
 
-func (bs *BtcBlockScanner) blockIfPaused() {
-	bs.scanLoopMu.Lock()
-	for bs.scanLoopPaused {
-		bs.scanLoopCond.Wait()
-	}
-	bs.scanLoopMu.Unlock()
-}
-
 func (bs *BtcBlockScanner) sleep(interval time.Duration) {
-	select {
-	case <-time.After(interval):
-	case <-bs.getPauseCh():
-	}
-}
-
-func (bs *BtcBlockScanner) getPauseCh() <-chan struct{} {
-	bs.scanLoopMu.Lock()
-	defer bs.scanLoopMu.Unlock()
-	if bs.scanLoopPauseCh == nil {
-		bs.scanLoopPauseCh = make(chan struct{})
-	}
-	return bs.scanLoopPauseCh
+	bs.scanLoop.WaitInterruptible(interval)
 }
 
 func (bs *BtcBlockScanner) Run() error {
-	bs.scanLoopMu.Lock()
-	if bs.scanLoopPaused {
-		bs.scanLoopPaused = false
-		bs.scanLoopPauseCh = make(chan struct{})
-		bs.scanLoopCond.Broadcast()
-	}
-	bs.scanLoopMu.Unlock()
+	bs.scanLoop.Run()
 	return nil
 }
 
 func (bs *BtcBlockScanner) Pause() error {
-	bs.scanLoopMu.Lock()
-	if !bs.scanLoopPaused {
-		bs.scanLoopPaused = true
-		if bs.scanLoopPauseCh != nil {
-			close(bs.scanLoopPauseCh)
-		}
-	}
-	bs.scanLoopMu.Unlock()
+	bs.scanLoop.Pause()
 	return nil
 }
+
+func (bs *BtcBlockScanner) ScanPaused() bool { return bs.scanLoop.ScanPaused() }
 
 func (bs *BtcBlockScanner) appendBlockTxExtract(res *types.BlockScanResult, tx *models.Transaction, txid string, txIndex map[string]*models.Transaction, prevoutCache map[string]*models.Transaction) {
 	items, err := bs.extractTransaction(tx, txIndex, bs.ScanTargetFunc, prevoutCache)
