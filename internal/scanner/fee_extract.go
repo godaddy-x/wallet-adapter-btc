@@ -858,6 +858,11 @@ func diagnoseBusinessPayerAccountingFailure(
 			if snap == nil || !snap.Found || len(snap.Legs) == 0 {
 				return "trade order outbound snapshot missing"
 			}
+			for _, bl := range snap.Legs {
+				if strings.TrimSpace(bl.SendOut) == "" {
+					return "trade order payerSendOut missing/empty (extParam.payerSendOut required for multi-payer fee accounting)"
+				}
+			}
 		}
 	}
 	payers := chainPayersFromAllVins(trx, decimals)

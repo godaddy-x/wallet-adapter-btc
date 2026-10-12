@@ -149,6 +149,15 @@ func (bs *BtcBlockScanner) ScanBlockWithResult(height uint64) (*types.BlockScanR
 	}
 	res.TxTotal = blockScanTxTotal(block)
 	bs.beginBlockAccountTargetCache(block, txIndex, targetFunc)
+	// When getblock lacks verbosity-3 prevouts (or explorer omit), resolve vin addresses
+	// before managed-touch so summary→external spends are not skipped as "unrelated".
+	// No-op when vins already carry addresses (verbosity 3).
+	for _, tx := range txList {
+		if tx == nil || !vinNeedsRPCResolution(tx, txIndex) {
+			continue
+		}
+		bs.fillVinAddresses(tx, txIndex, prevoutCache, targetFunc, false)
+	}
 	if !bs.blockHasManagedCandidate(block, txIndex, targetFunc) {
 		finalizeBlockScanResult(res)
 		return res, nil
@@ -535,9 +544,10 @@ func (bs *BtcBlockScanner) extractTransaction(trx *models.Transaction, txIndex m
 		return []*types.ExtractDataItem{}, nil
 	}
 	blockScan := txIndex != nil
-	// Single-tx path: resolve prevouts before touch so managed vin-only spends are detected.
-	// Block scan: touch first, then fill only managed vins (avoids prevout RPC for unrelated txs).
-	if !blockScan {
+	// Resolve prevouts before touch when vins lack addresses (aligned with BTC/LTC; no-op when prevouts present).
+	// With verbosity-3 prevouts, vinNeedsRPCResolution is false and block scan still fills only
+	// managed vins after touch below.
+	if !blockScan || vinNeedsRPCResolution(trx, txIndex) {
 		bs.fillVinAddresses(trx, txIndex, prevoutCache, scanTargetFunc, false)
 	}
 	if !bs.txTouchesManaged(trx, txIndex, scanTargetFunc) {
